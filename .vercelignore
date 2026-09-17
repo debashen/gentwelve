@@ -1,0 +1,11 @@
+.git
+.next
+node_modules
+.sites-runtime
+.env*
+!.env.example
+*.tsbuildinfo
+outputs
+work
+.agents
+.codex

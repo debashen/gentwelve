@@ -12,11 +12,13 @@ function equal(left: string, right: string) {
 }
 
 export async function POST(request: Request) {
-  const { password } = await request.json() as { password?: string };
+  let body: unknown;
+  try { body=await request.json(); } catch { return NextResponse.json({error:"Invalid request."},{status:400}); }
+  const password=body && typeof body === "object" && "password" in body ? body.password : undefined;
   const expected = process.env.ADMIN_PASSWORD;
   const authSecret = process.env.AUTH_SECRET;
   if (!expected || !authSecret) return NextResponse.json({ error: "Admin login is not configured." }, { status: 503 });
-  if (!password || !equal(password, expected)) return NextResponse.json({ error: "Incorrect password." }, { status: 401 });
+  if (typeof password !== "string" || !password || !equal(password, expected)) return NextResponse.json({ error: "Incorrect password." }, { status: 401 });
 
   const token = await new SignJWT({ name: "Gentwelve Admin", email: "admin@gentwelve.com" })
     .setProtectedHeader({ alg: "HS256" })

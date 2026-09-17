@@ -1,9 +1,23 @@
 import fs from "node:fs/promises";
-import postgres from "postgres";
+import { connectDatabase, safeDatabaseError } from "./database.mjs";
 
-if (!process.env.DATABASE_URL) throw new Error("DATABASE_URL is not configured.");
-const sql = postgres(process.env.DATABASE_URL, { ssl: "require", max: 1 });
-const migration = await fs.readFile(new URL("../sql/001_initial.sql", import.meta.url), "utf8");
-await sql.unsafe(migration);
-await sql.end();
-console.log("Database migration complete.");
+let sql;
+try {
+  sql = connectDatabase();
+  const directory = new URL("../sql/", import.meta.url);
+  const files = (await fs.readdir(directory)).filter(name => /^\d+.*\.sql$/.test(name)).sort();
+  await sql.begin(async tx => {
+    await tx`SELECT pg_advisory_xact_lock(1274137)`;
+    await tx`CREATE TABLE IF NOT EXISTS schema_migrations (name TEXT PRIMARY KEY, applied_at TIMESTAMPTZ NOT NULL DEFAULT now())`;
+    for (const name of files) {
+      if ((await tx`SELECT name FROM schema_migrations WHERE name=${name}`).length) continue;
+      await tx.unsafe(await fs.readFile(new URL(name, directory), "utf8"));
+      await tx`INSERT INTO schema_migrations (name) VALUES (${name})`;
+      console.log(`Applied ${name}`);
+    }
+  });
+  console.log("Database migration complete.");
+} catch (error) {
+  console.error(process.env.DATABASE_URL ? safeDatabaseError(error) : "DATABASE_URL is not configured.");
+  process.exitCode = 1;
+} finally { await sql?.end(); }

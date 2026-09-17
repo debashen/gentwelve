@@ -1,51 +1,31 @@
-# Gentwelve Catalogue
+# Gentwelve Product Discovery
 
-Visual promotional-product catalogue for Gentwelve Printing Co. Built with Next.js for Vercel, PostgreSQL and the Amrod Vendor API.
+Existing Next.js catalogue migrated from Sites to PostgreSQL and Vercel. The Sites deployment remains independent and must stay online. This project does not change DNS or that deployment. Keep the current UI, catalogue controls and WhatsApp flows.
 
-## What is included
-
-- Public searchable product catalogue
-- Product detail pages with live variant stock
-- WhatsApp quote enquiries
-- Password-protected catalogue admin
-- Publish, unpublish and merchandising controls
-- Enquiry analytics
-- Resumable Amrod product, price and stock imports
+See [deployment and recovery instructions](docs/VERCEL.md) for the verified failure, required configuration, initial import, schedules and verification.
 
 ## Local setup
 
-1. Install dependencies with `pnpm install`.
-2. Copy `.env.example` to `.env.local` and add the required values.
-3. Create a PostgreSQL database.
-4. Run `pnpm db:migrate`.
-5. Run `pnpm dev`.
+Use Node 22 and the pinned pnpm version in `package.json`.
 
-## Required environment variables
+```sh
+pnpm install --frozen-lockfile
+cp .env.example .env.local
+# Populate DATABASE_URL and the other settings locally; never commit credentials.
+pnpm db:migrate
+pnpm db:check
+pnpm dev
+```
 
-- `DATABASE_URL`
-- `AUTH_SECRET`
-- `ADMIN_PASSWORD`
-- `AMROD_USERNAME`
-- `AMROD_PASSWORD`
-- `AMROD_CUSTOMER_CODE`
-- `AMROD_SYNC_KEY`
-- `NEXT_PUBLIC_SITE_URL`
+Local loopback PostgreSQL connections use no TLS. Remote connections require TLS; use the provider's connection string. Migrations load `.env.local`, preserve existing data and run transactionally once per file. No database or supplier connection is made during a build.
 
-Optional pricing settings:
+```sh
+pnpm lint
+pnpm typecheck
+pnpm test
+pnpm build
+```
 
-- `AMROD_MARKUP_RATE`, defaults to `0.35`
-- `AMROD_COST_VAT_RATE`, defaults to `0.15`
+Integration tests use `TEST_DATABASE_URL` and a production build. **Only use a disposable loopback PostgreSQL database**: the test truncates its catalogue tables. Run migrations on it first. `TEST_DATABASE_URL=... pnpm test` starts its own test web server on port 3107. Normal unit tests need no credentials.
 
-Never commit real credentials. Configure them in Vercel Project Settings.
-
-## Deploying to Vercel
-
-1. Import this GitHub repository into Vercel.
-2. Add a PostgreSQL database and copy its connection string to `DATABASE_URL`.
-3. add every required environment variable.
-4. Run the SQL in `sql/001_initial.sql` against the production database.
-5. Deploy and test the generated Vercel URL.
-6. Run the Amrod imports from `/admin`.
-7. Move `catalogue.gentwelve.com` only after the Vercel version matches the current live site.
-
-The existing ChatGPT Sites deployment is independent and remains the fallback until the domain is deliberately moved.
+The 4,137-product historical catalogue is data, not a bundled seed. Import the current Amrod feed or restore an approved export of the original data. Do not replace the real catalogue with demonstration products. Fresh imports are drafts until reviewed and bulk published. Public counts exclude drafts, missing prices/images and zero-stock products, so they may be lower than the total imported count.

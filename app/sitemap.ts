@@ -1,9 +1,10 @@
+import { siteUrl } from "@/lib/site-url";
 import type { MetadataRoute } from "next";
 import { env } from "@/lib/runtime";
 
 export const dynamic = "force-dynamic";
 
-const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://catalogue.gentwelve.com";
+const SITE_URL = siteUrl;
 
 type SitemapProduct = { code: string; updatedAt: string };
 

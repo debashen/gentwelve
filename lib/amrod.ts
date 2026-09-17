@@ -19,8 +19,9 @@ function configured() { return Boolean(username && password && runtime.AMROD_CUS
 export function getSyncKey() { return runtime.AMROD_SYNC_KEY; }
 
 export function calculatePublicPriceCents(supplierPrice: number) {
-  const vat = Number(runtime.AMROD_COST_VAT_RATE ?? "0.15");
-  const markup = Number(runtime.AMROD_MARKUP_RATE ?? "0.35");
+  const vat = Number(runtime.AMROD_COST_VAT_RATE?.trim() || "0.15");
+  const markup = Number(runtime.AMROD_MARKUP_RATE?.trim() || "0.35");
+  if (![vat,markup,supplierPrice].every(value=>Number.isFinite(value)&&value>=0)) throw new Error("Invalid pricing configuration.");
   return Math.ceil((supplierPrice * (1 + vat) * (1 + markup)) * 100);
 }
 
@@ -28,6 +29,8 @@ export async function getAmrodToken() {
   if (!configured()) throw new Error("Amrod credentials are not configured.");
   const response = await fetch(IDENTITY_URL, {
     method: "POST",
+    cache: "no-store",
+    signal: AbortSignal.timeout(25000),
     headers: { "content-type": "application/json", accept: "application/json" },
     body: JSON.stringify({ UserName: username, Password: password, CustomerCode: runtime.AMROD_CUSTOMER_CODE }),
   });
@@ -40,13 +43,13 @@ export async function getAmrodToken() {
 }
 
 export async function fetchAmrodDataset(path: string, token: string) {
-  const response = await fetch(`${API_URL}${path}`, { headers: { authorization: `Bearer ${token}`, accept: "application/json" } });
+  const response = await fetch(`${API_URL}${path}`, { cache: "no-store", signal: AbortSignal.timeout(240000), headers: { authorization: `Bearer ${token}`, accept: "application/json" } });
   if (!response.ok) throw new Error(`Amrod request failed for ${path} (${response.status}).`);
   return response.json() as Promise<unknown>;
 }
 
 export async function fetchAmrodResponse(path: string, token: string) {
-  const response = await fetch(`${API_URL}${path}`, { headers: { authorization: `Bearer ${token}`, accept: "application/json" } });
+  const response = await fetch(`${API_URL}${path}`, { cache: "no-store", signal: AbortSignal.timeout(240000), headers: { authorization: `Bearer ${token}`, accept: "application/json" } });
   if (!response.ok) throw new Error(`Amrod request failed for ${path} (${response.status}).`);
   return response;
 }
@@ -55,11 +58,11 @@ export async function* streamJsonObjects(response: Response): AsyncGenerator<Rec
   if (!response.body) throw new Error("Amrod returned an empty response stream.");
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
-  let arrayStarted = false, objectDepth = 0, inString = false, escaped = false, buffer = "";
+  let arrayStarted = false, arrayEnded = false, objectDepth = 0, inString = false, escaped = false, buffer = "";
   const consume = function* (text: string) {
     for (const char of text) {
       if (!arrayStarted) { if (char === "[") arrayStarted = true; continue; }
-      if (objectDepth === 0) { if (char === "{") { objectDepth = 1; buffer = "{"; inString = false; escaped = false; } continue; }
+      if (objectDepth === 0) { if (char === "]") arrayEnded=true; if (char === "{") { objectDepth = 1; buffer = "{"; inString = false; escaped = false; } continue; }
       buffer += char;
       if (inString) {
         if (escaped) escaped = false;
@@ -80,7 +83,10 @@ export async function* streamJsonObjects(response: Response): AsyncGenerator<Rec
       const { value, done } = await reader.read();
       const text = decoder.decode(value, { stream: !done });
       for (const complete of consume(text)) yield JSON.parse(complete) as Record<string, unknown>;
-      if (done) break;
+      if (done) {
+        if (!arrayStarted || !arrayEnded || objectDepth || inString) throw new Error("Incomplete supplier response.");
+        break;
+      }
     }
   } finally {
     try { await reader.cancel(); } catch { /* stream already closed */ }

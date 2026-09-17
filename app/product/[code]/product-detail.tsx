@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, ArrowUpRight, Check, Copy, MessageCircle } from "lucide-react";
 import type { ProductPageProduct, ProductPageVariant, RelatedProduct } from "@/lib/catalogue-product";
@@ -31,12 +32,13 @@ export default function ProductDetail({ product, variants, related }: { product:
     : `Hi Gentwelve, I'm interested in ${product.name} (${product.code})${selection ? `, ${selection}` : ""}. Please quote me for ${quantity} units branded with our logo.`;
 
   useEffect(() => {
-    setPageUrl(window.location.href);
+    const timer=window.setTimeout(()=>setPageUrl(window.location.href),0);
     try {
       session.current = sessionStorage.getItem("gentwelve_session") || crypto.randomUUID();
       sessionStorage.setItem("gentwelve_session", session.current);
-      void fetch("/api/events", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ eventType: "product_view", productCode: product.code, sessionId: session.current }), keepalive: true });
+      void fetch("/api/events", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ eventType: "product_view", productCode: product.code, sessionId: session.current }), keepalive: true }).catch(()=>{});
     } catch { /* analytics must never block the page */ }
+    return()=>window.clearTimeout(timer);
   }, [product.code]);
 
   const copyLink = async () => {
@@ -52,8 +54,8 @@ export default function ProductDetail({ product, variants, related }: { product:
 
   return <main className="product-page">
     <header className="product-page-header">
-      <a href="/" aria-label="Gentwelve catalogue"><img src="/gentwelve-web-logo-w.svg" alt="Gentwelve Printing Co" /></a>
-      <a className="back-to-catalogue" href="/"><ArrowLeft /> Back to catalogue</a>
+      <Link href="/" aria-label="Gentwelve catalogue"><img src="/gentwelve-web-logo-w.svg" alt="Gentwelve Printing Co" /></Link>
+      <Link className="back-to-catalogue" href="/"><ArrowLeft /> Back to catalogue</Link>
     </header>
 
     <section className="product-detail-shell">
@@ -72,7 +74,7 @@ export default function ProductDetail({ product, variants, related }: { product:
         {sizes.length > 0 && <div className="detail-option-group"><p>Choose a size</p><div className="variant-options"><button className={!size ? "active" : ""} onClick={() => setSize("")}>Any size</button>{sizes.map((value) => <button className={size === value ? "active" : ""} onClick={() => setSize(value)} key={value}>{value}</button>)}</div></div>}
         {product.methods.length > 0 && <div className="detail-option-group"><p>Available branding methods</p><div className="methods">{product.methods.map((method) => <span key={method}>{method}</span>)}</div></div>}
         <fieldset className="detail-quantity"><legend>How many do you need?</legend><div className="quantities">{quantityOptions(product.minimumQuantity).map((value) => <button className={quantity === value ? "active" : ""} onClick={() => setQuantity(value)} key={value}>{value}</button>)}</div></fieldset>
-        <a className="quote-button" href={quoteUrl} target="_blank" rel="noreferrer" onClick={() => { try { void fetch("/api/events", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ eventType: "whatsapp_click", productCode: product.code, quantity, sessionId: session.current }), keepalive: true }); } catch {} }}><MessageCircle /> Get a branded quote</a>
+        <a className="quote-button" href={quoteUrl} target="_blank" rel="noreferrer" onClick={() => { try { void fetch("/api/events", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ eventType: "whatsapp_click", productCode: product.code, quantity, sessionId: session.current }), keepalive: true }).catch(()=>{}); } catch {} }}><MessageCircle /> Get a branded quote</a>
         <div className="share-actions"><a href={`https://wa.me/?text=${encodeURIComponent(`${shareMessage}${pageUrl}`)}`} target="_blank" rel="noreferrer"><MessageCircle /> Share on WhatsApp</a><button onClick={copyLink}>{copied ? <Check /> : <Copy />}{copied ? "Link copied" : "Copy product link"}</button></div>
         <small className="detail-fine-print">Stock is based on the latest supplier update and is confirmed when we quote. Branding, setup and delivery are quoted separately.</small>
       </div>

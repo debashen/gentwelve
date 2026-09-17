@@ -19,9 +19,9 @@ export async function GET(request: Request) {
       "EXISTS (SELECT 1 FROM variants stocked_variant WHERE stocked_variant.product_code = products.supplier_code AND stocked_variant.active = 1 AND COALESCE(stocked_variant.stock_quantity, 0) > 0)",
     ];
     const bindings: unknown[] = [];
-    if (search) { conditions.push("(name LIKE ? OR supplier_code LIKE ? OR brand LIKE ?)"); const q = `%${search}%`; bindings.push(q, q, q); }
-    if (filter === "Under R100") { conditions.push("public_price_cents < ?"); bindings.push(10000); }
-    else if (filter === "Under R250") { conditions.push("public_price_cents < ?"); bindings.push(25000); }
+    if (search) { conditions.push("(name ILIKE ? OR supplier_code ILIKE ? OR brand ILIKE ?)"); const q = `%${search}%`; bindings.push(q, q, q); }
+    if (filter === "Under R100") { conditions.push("COALESCE((SELECT MIN(v.public_price_cents) FROM variants v WHERE v.product_code=products.supplier_code AND v.active=1 AND COALESCE(v.stock_quantity,0)>0 AND v.public_price_cents IS NOT NULL),public_price_cents) < ?"); bindings.push(10000); }
+    else if (filter === "Under R250") { conditions.push("COALESCE((SELECT MIN(v.public_price_cents) FROM variants v WHERE v.product_code=products.supplier_code AND v.active=1 AND COALESCE(v.stock_quantity,0)>0 AND v.public_price_cents IS NOT NULL),public_price_cents) < ?"); bindings.push(25000); }
     else if (filter === "Trending") conditions.push("trending = 1");
     else if (filter === "New") conditions.push("new_arrival = 1");
     else if (filter !== "Discover") { conditions.push("category = ?"); bindings.push(filter); }
@@ -33,6 +33,6 @@ export async function GET(request: Request) {
     const total = Number(count?.total ?? 0);
     return NextResponse.json({ products: result.results.map(row => ({ ...row, methods: JSON.parse(String(row.methods || "[]")), colours: String(row.colours||"").split(",").filter(Boolean), sizes: String(row.sizes||"").split(",").filter(Boolean) })), total, page, hasMore: (page + 1) * pageSize < total });
   } catch {
-    return NextResponse.json({ products: [], total: 0, page: 0, hasMore: false, unavailable: true }, { status: 200 });
+    return NextResponse.json({ products: [], total: 0, page: 0, hasMore: false, unavailable: true }, { status: 503, headers: { "Cache-Control": "no-store" } });
   }
 }

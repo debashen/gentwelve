@@ -1,0 +1,31 @@
+name: Catalogue maintenance
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        type: choice
+        options: [daily, full]
+        default: daily
+  schedule:
+    - cron: '17 2 * * 1-6'
+    - cron: '17 2 * * 0'
+permissions:
+  contents: read
+concurrency:
+  group: catalogue-maintenance
+  cancel-in-progress: false
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Refresh catalogue
+        env:
+          SYNC_BASE_URL: ${{ secrets.SYNC_BASE_URL }}
+          AMROD_SYNC_KEY: ${{ secrets.AMROD_SYNC_KEY }}
+          MODE: ${{ inputs.mode || (github.event.schedule == '17 2 * * 0' && 'full' || 'daily') }}
+        run: node scripts/sync.mjs "$MODE"

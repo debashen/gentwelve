@@ -9,7 +9,7 @@ type PageProps = { params: Promise<{ code: string }> };
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
   const { code } = await params;
-  const data = await getProductPageData(decodeURIComponent(code));
+  const data = await getProductPageData(code);
   if (!data) return { title: "Product unavailable | Gentwelve Printing Co" };
 
   const { product } = data;
@@ -25,7 +25,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 
 export default async function ProductPage({ params }: PageProps) {
   const { code } = await params;
-  const data = await getProductPageData(decodeURIComponent(code));
+  const data = await getProductPageData(code);
   if (!data) notFound();
   return <ProductDetail {...data} />;
 }

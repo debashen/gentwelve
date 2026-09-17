@@ -18,7 +18,10 @@ export async function GET(request: Request) {
     const result = await env.DB.prepare(
       `SELECT full_code AS code, colour, size, stock_quantity AS stock
        FROM variants
-       WHERE product_code = ? AND active = 1 AND COALESCE(stock_quantity, 0) > 0
+       WHERE product_code = ? AND active = 1
+         AND EXISTS (SELECT 1 FROM products p WHERE p.supplier_code=variants.product_code
+           AND p.active=1 AND p.curated=1 AND p.public_price_cents IS NOT NULL
+           AND p.image_url IS NOT NULL AND p.image_url!='') AND COALESCE(stock_quantity, 0) > 0
        ORDER BY COALESCE(colour, ''), COALESCE(size, ''), full_code`,
     ).bind(code).all<VariantRow>();
 
@@ -31,6 +34,6 @@ export async function GET(request: Request) {
       })),
     });
   } catch {
-    return NextResponse.json({ variants: [], unavailable: true }, { status: 200 });
+    return NextResponse.json({ variants: [], unavailable: true }, { status: 503, headers: { "Cache-Control": "no-store" } });
   }
 }

@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect,useState } from "react";
 import { CheckCircle2,Database,LoaderCircle,PackageCheck,RefreshCw,WalletCards,XCircle } from "lucide-react";
 
@@ -15,7 +16,7 @@ export default function ImportPanel(){
 
  async function request(url:string,options?:RequestInit){
   const controller=new AbortController();
-  const timeout=window.setTimeout(()=>controller.abort(),30000);
+  const timeout=window.setTimeout(()=>controller.abort(),290000);
   try{return await fetch(url,{...options,signal:controller.signal})}
   catch(reason){
    if(reason instanceof DOMException&&reason.name==="AbortError")throw new Error("The connection paused. Your progress is saved — use Resume to continue.");
@@ -35,7 +36,7 @@ export default function ImportPanel(){
  }
 
  async function refresh(){const response=await request("/api/admin/sync",{cache:"no-store"});if(response.ok)setOverview(await response.json() as Overview)}
- useEffect(()=>{refresh().catch(()=>{})},[]);
+ useEffect(()=>{const controller=new AbortController();fetch("/api/admin/sync",{cache:"no-store",signal:controller.signal}).then(async response=>{if(!response.ok)throw new Error("Import status unavailable. Check the database setup.");setOverview(await response.json() as Overview)}).catch(()=>{if(!controller.signal.aborted)setError("Import status unavailable. Check the database setup.")});return()=>controller.abort()},[]);
 
  async function execute(dataset:Dataset,strategy?:"changes"){
  let current=overview.runs[dataset];
@@ -85,6 +86,6 @@ export default function ImportPanel(){
   {error&&<div className="admin-result failure"><XCircle/><span><strong>Import paused</strong>{error} Progress is saved, so the same button can resume it.</span></div>}
   {priceComplete&&stockComplete&&!enrichmentComplete&&<section className="admin-next"><div><span>04</span><h2>Prepare the catalogue</h2><p>Map Amrod’s nested product images, categories, brands and minimum quantities into the Gentwelve catalogue.</p></div><button onClick={prepareCatalogue} disabled={Boolean(busy)}>{busy==="enrichment"?<LoaderCircle className="spin"/>:<RefreshCw/>}{busy==="enrichment"?"Preparing…":overview.runs.enrichment?.status==="running"?"Resume preparation":"Prepare catalogue"}</button></section>}
   {enrichmentComplete&&<div className="admin-result success"><CheckCircle2/><span><strong>{overview.metrics.ready.toLocaleString()} products ready for review</strong>Manage the discovery feed or see what customers are engaging with. <a href="/admin/catalogue">Open catalogue review →</a> <a href="/admin/analytics">View enquiry intelligence →</a></span></div>}
-  <a className="admin-back" href="/">← Back to product discovery</a>
+  <Link className="admin-back" href="/">← Back to product discovery</Link>
  </div>
 }
