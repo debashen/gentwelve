@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL ?? "https://catalogue.gentwelve.com"),
+  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL || "https://catalogue.gentwelve.com"),
   title: "Gentwelve Printing Co | Branded Product Ideas",
   description: "Explore curated promotional product ideas and request a branded quote from Gentwelve Printing Co.",
   alternates: { canonical: "/" },
@@ -19,7 +19,7 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "https://catalogue.gentwelve.com";
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://catalogue.gentwelve.com";
   const organisation = {
     "@context": "https://schema.org",
     "@type": "Organization",
