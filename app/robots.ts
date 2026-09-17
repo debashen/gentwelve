@@ -1,6 +1,6 @@
 import type { MetadataRoute } from "next";
 
-const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? "https://catalogue.gentwelve.com";
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://catalogue.gentwelve.com";
 
 export default function robots(): MetadataRoute.Robots {
   return {
