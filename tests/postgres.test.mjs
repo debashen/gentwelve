@@ -31,6 +31,25 @@ test('PostgreSQL production API: filters, exact variants, admin, bulk publicatio
     assert.equal((await fetch(base+'/api/admin/catalogue')).status,401);
     const login=await fetch(base+'/api/admin/login',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({password:'fixture-password'})});assert.equal(login.status,200);
     const cookie=login.headers.get('set-cookie').split(';')[0];const headers={cookie,'content-type':'application/json'};
+    assert.equal((await fetch(base+'/api/admin/sales-contact')).status,401);
+    assert.equal((await fetch(base+'/api/admin/sales-contact',{method:'PUT',headers:{'content-type':'application/json'},body:JSON.stringify({contactName:'Intruder',whatsappNumber:'27821234567'})})).status,401);
+    const savedContact=await get('/api/admin/sales-contact',{headers});
+    const quotePath='/api/whatsapp?code=SHIRT&quantity=100&branding=Yes';
+    try {
+      for (const [contactName,whatsappNumber] of [['Jamie','27821234567'],['Sam','27821234568']]) {
+        await get('/api/admin/sales-contact',{method:'PUT',headers,body:JSON.stringify({contactName,whatsappNumber})});
+        assert.deepEqual(await get('/api/admin/sales-contact',{headers}),{contactName,whatsappNumber});
+        const quote=await fetch(base+quotePath,{redirect:'manual'});
+        assert.equal(quote.status,302);assert.match(quote.headers.get('cache-control'),/no-store/);
+        const destination=new URL(quote.headers.get('location'));
+        assert.equal(destination.pathname,'/'+whatsappNumber);
+        assert.equal(destination.searchParams.get('text'),`Hi ${contactName}, I'd like a quote on this product.\n\nProduct: Blue Golf Shirt\nCode: SHIRT\nQuantity: 100\nBranding: Yes\nProduct Link: ${base}/product/SHIRT`);
+      }
+      assert.equal((await fetch(base+'/api/admin/sales-contact',{method:'PUT',headers,body:JSON.stringify({contactName:'',whatsappNumber:'bad'})})).status,400);
+      assert.equal((await fetch(base+'/api/admin/sales-contact',{method:'PUT',headers:{...headers,origin:'https://other.example'},body:JSON.stringify(savedContact)})).status,403);
+      assert.equal((await fetch(base+'/api/whatsapp?code=DRAFT&quantity=100&branding=Yes',{redirect:'manual'})).status,404);
+      assert.equal((await fetch(base+'/api/whatsapp?code=SHIRT&quantity=0&branding=Yes',{redirect:'manual'})).status,400);
+    } finally { await get('/api/admin/sales-contact',{method:'PUT',headers,body:JSON.stringify(savedContact)}); }
     const admin=await get('/api/admin/catalogue?status=all',{headers});assert.equal(admin.total,3);assert.ok(admin.products.some(p=>p.code==='ZERO'));
     const publish=await get('/api/admin/catalogue',{method:'POST',headers,body:JSON.stringify({action:'publish_all_eligible',confirmed:true})});assert.equal(publish.published,1);
     assert.equal((await get('/api/products')).total,2);

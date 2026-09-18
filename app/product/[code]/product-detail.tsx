@@ -5,6 +5,9 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, ArrowUpRight, Check, Copy, MessageCircle } from "lucide-react";
 import type { ProductPageProduct, ProductPageVariant, RelatedProduct } from "@/lib/catalogue-product";
 
+import BrandingSelector from "@/app/components/branding-selector";
+import { enquiryPath } from "@/lib/whatsapp";
+
 const formatPrice = (cents: number) => Math.ceil(cents / 100).toLocaleString("en-ZA");
 const quantityOptions = (minimum: number) => {
   const start = Math.max(1, minimum || 1);
@@ -17,6 +20,7 @@ export default function ProductDetail({ product, variants, related }: { product:
   const [colour, setColour] = useState("");
   const [size, setSize] = useState("");
   const [quantity, setQuantity] = useState("Not sure");
+  const [branding, setBranding] = useState("Not sure");
   const [copied, setCopied] = useState(false);
   const [pageUrl, setPageUrl] = useState("");
   const session = useRef("");
@@ -27,9 +31,6 @@ export default function ProductDetail({ product, variants, related }: { product:
   const stock = matching.reduce((total, variant) => total + variant.stock, 0);
   const priceCents = matching.length ? Math.min(...matching.map((variant) => variant.priceCents)) : product.priceCents;
   const selection = [colour && `colour ${colour}`, size && `size ${size}`].filter(Boolean).join(", ");
-  const enquiry = quantity === "Not sure"
-    ? `Hi Gentwelve, I'm interested in ${product.name} (${product.code})${selection ? `, ${selection}` : ""}. Please advise on a suitable quantity and branding options.`
-    : `Hi Gentwelve, I'm interested in ${product.name} (${product.code})${selection ? `, ${selection}` : ""}. Please quote me for ${quantity} units branded with our logo.`;
 
   useEffect(() => {
     const timer=window.setTimeout(()=>setPageUrl(window.location.href),0);
@@ -50,7 +51,7 @@ export default function ProductDetail({ product, variants, related }: { product:
   };
 
   const shareMessage = `Take a look at ${product.name} from Gentwelve Printing Co: `;
-  const quoteUrl = `https://wa.me/27690451055?text=${encodeURIComponent(enquiry)}`;
+  const quoteUrl = enquiryPath(product.code, quantity, branding, colour, size);
 
   return <main className="product-page">
     <header className="product-page-header">
@@ -74,6 +75,7 @@ export default function ProductDetail({ product, variants, related }: { product:
         {sizes.length > 0 && <div className="detail-option-group"><p>Choose a size</p><div className="variant-options"><button className={!size ? "active" : ""} onClick={() => setSize("")}>Any size</button>{sizes.map((value) => <button className={size === value ? "active" : ""} onClick={() => setSize(value)} key={value}>{value}</button>)}</div></div>}
         {product.methods.length > 0 && <div className="detail-option-group"><p>Available branding methods</p><div className="methods">{product.methods.map((method) => <span key={method}>{method}</span>)}</div></div>}
         <fieldset className="detail-quantity"><legend>How many do you need?</legend><div className="quantities">{quantityOptions(product.minimumQuantity).map((value) => <button className={quantity === value ? "active" : ""} onClick={() => setQuantity(value)} key={value}>{value}</button>)}</div></fieldset>
+        <BrandingSelector value={branding} onChange={setBranding} />
         <a className="quote-button" href={quoteUrl} target="_blank" rel="noreferrer" onClick={() => { try { void fetch("/api/events", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ eventType: "whatsapp_click", productCode: product.code, quantity, sessionId: session.current }), keepalive: true }).catch(()=>{}); } catch {} }}><MessageCircle /> Get a branded quote</a>
         <div className="share-actions"><a href={`https://wa.me/?text=${encodeURIComponent(`${shareMessage}${pageUrl}`)}`} target="_blank" rel="noreferrer"><MessageCircle /> Share on WhatsApp</a><button onClick={copyLink}>{copied ? <Check /> : <Copy />}{copied ? "Link copied" : "Copy product link"}</button></div>
         <small className="detail-fine-print">Stock is based on the latest supplier update and is confirmed when we quote. Branding, setup and delivery are quoted separately.</small>

@@ -84,3 +84,16 @@ A green deployment alone does not restore data. Supply real environment values, 
 - Compiled client JavaScript contained no Amrod credential or database environment references.
 
 The local runtime was Node 25; deployment pins Node 22. The Vercel build is the production Node 22 verification. Live supplier import and exact 4,137-product reconciliation remain blocked by empty production configuration.
+
+## WhatsApp sales contact
+
+Migration `003_sales_contact.sql` adds a separate contact table and seeds the default
+contact with Debashen and the previously configured business number. Apply
+`pnpm db:migrate` before deploying this version. It does not modify catalogue data.
+Administrators can edit the name and international number in `/admin/catalogue`
+under **WhatsApp / Sales Contact**. Settings persist in PostgreSQL. The uncached
+`/api/whatsapp` redirect resolves the default contact on each click, including links
+on already-open pages. Product enquiries include quantity, branding, a product-page
+URL and any selected colour/size. Contact IDs allow later expansion; there is no
+salesperson routing. If settings cannot be loaded, enquiries show a retry message
+instead of silently sending to an outdated contact. No new dependencies are needed.

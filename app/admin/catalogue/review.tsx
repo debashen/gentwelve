@@ -3,6 +3,8 @@
 import { useEffect,useState } from "react";
 import { ArrowLeft,Check,Flame,LoaderCircle,Search,Sparkles,Star,X } from "lucide-react";
 
+import SalesContactSettings from "./sales-contact";
+
 type Product={id:number;code:string;name:string;category:string|null;brand:string|null;image:string|null;priceCents:number|null;minimumQuantity:number|null;curated:number;featured:number;trending:number;newArrival:number;displayPriority:number;stock:number;eligible:number};
 type Payload={products:Product[];categories:string[];total:number;eligible:number;page:number;pageSize:number;hasMore:boolean;error?:string};
 type SyncRun={status:string;finishedAt?:string|null};
@@ -26,6 +28,7 @@ export default function CatalogueReview(){
 
  return <section className="review-shell">
   <header className="review-header"><div><nav className="review-nav"><a href="/admin"><ArrowLeft/> Data control</a><a href="/admin/analytics">Enquiry intelligence →</a></nav><span className="review-kicker">CURATION PHASE</span><h1>Control what goes live.</h1><p>Browse the entire imported catalogue. Products missing an image, price, category or available stock remain safely unpublished.</p></div><div className="review-actions"><div className="review-stat"><strong>{total.toLocaleString()}</strong><span>products in this view</span></div><button className="bulk-publish" onClick={publishAll} disabled={bulkSaving||!eligible}>{bulkSaving?<LoaderCircle className="spin"/>:<Check/>}{bulkSaving?"Publishing…":`Publish all ${eligible.toLocaleString()}`}</button></div></header>
+  <SalesContactSettings/>
   <div className="sync-health"><div><small>Products updated</small><strong>{freshness(sync?.runs.products)}</strong></div><div><small>Prices updated</small><strong>{freshness(sync?.runs.prices)}</strong></div><div><small>Stock updated</small><strong>{freshness(sync?.runs.stock)}</strong></div><a href="/admin">Run catalogue update</a></div>
   <div className="review-controls"><label><Search/><input value={query} onChange={event=>setQuery(event.target.value)} placeholder="Search name, code or brand"/></label><select value={category} onChange={event=>setCategory(event.target.value)}><option value="">All categories</option>{categories.map(item=><option key={item}>{item}</option>)}</select><select value={placement} onChange={event=>setPlacement(event.target.value)}><option value="">All placements</option><option value="featured">Featured</option><option value="trending">Trending</option><option value="new">New arrivals</option></select><div className="review-tabs">{[["draft","To review"],["published","Published"],["all","All"]].map(([value,label])=><button key={value} className={status===value?"active":""} onClick={()=>setStatus(value)}>{label}</button>)}</div></div>
   {error&&<div className="review-error"><X/>{error}</div>}
