@@ -1,0 +1,1 @@
+export default function Sales(){return <div className="sales-content"><h1>Sales</h1><div className="sales-list"><a className="sales-row" href="/admin/sales/customers">Customers <span>Manage customer details →</span></a><a className="sales-row" href="/admin/sales/settings">Business / Documents <span>Configure business, tax, numbering and payments →</span></a></div></div>}
