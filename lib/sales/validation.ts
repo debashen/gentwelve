@@ -8,7 +8,7 @@ export type Customer = z.infer<typeof customerSchema>;
 export const businessSchema = z.object({
   legalName:text(),tradingName:text().default("Gentwelve Printing Co"),registrationNumber:text(100),vatRegistered:z.boolean().default(false),vatNumber:text(100),vatRateBps:z.number().int().min(0).max(10000).default(0),
   email:z.union([z.literal(""),z.string().email().max(254)]).default(""),telephone:text(40),whatsapp:text(40),website:text(300),address:text(1500),
-  logoUrl:z.string().max(1000).refine(value=>value.startsWith("/")&&!value.startsWith("//")||/^https:\/\//.test(value),"Use a local path or HTTPS logo URL").default("/gentwelve-web-logo.svg"),
+  logoUrl:z.string().max(700000).refine(value=>["/gentwelve-document-logo.png","/gentwelve-web-logo.svg"].includes(value)||/^data:image\/(png|jpeg);base64,[A-Za-z0-9+/=]+$/.test(value),"Upload a PNG or JPEG logo").default("/gentwelve-document-logo.png"),
   quoteValidityDays:z.number().int().min(1).max(365).default(30),quoteTerms:text(10000),invoiceTerms:text(10000),paymentTerms:text(10000),deliveryTerms:text(10000),
   bank:text(),accountName:text(),accountNumber:text(50),accountType:text(80),branchCode:text(20),defaultSalespersonId:z.string().min(1).max(80).default("default"),
   providers:z.object({paystack:z.boolean().default(false),payfast:z.boolean().default(false),ozow:z.boolean().default(false),eft:z.boolean().default(false)}).strict().default({}),

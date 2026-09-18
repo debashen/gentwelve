@@ -23,6 +23,23 @@ test('sales foundation API protects settings and persists customer data',{skip:!
   await call('customers','PUT',{id:customer.id,data:{...saved.data,contactPerson:'Alex'},version:saved.version});
   await call('customers','PUT',{id:customer.id,data:saved.data,version:saved.version},409);
   const result=await call('customers?q=Sales%20Fixture');assert.ok(result.items.some(c=>c.id===customer.id));
-  // Further lifecycle checks are appended in later phases.
+  const input={customerId:customer.id,reference:'TEST-REF',lines:[{productCode:'MANUAL-001',description:'Manual item',unitPriceCents:10000,quantity:10,discountBps:1000,brandingCents:500,setupCents:1000,otherCents:200}],deliveryCents:500};
+  const quote=await call('documents','POST',input);
+  const draft=await call('documents/'+quote.id);assert.equal(draft.document.number,null);assert.equal(draft.document.total_cents,96700);assert.equal(draft.document.snapshot.customer.notes,undefined);
+  assert.equal((await fetch(base+'/q/'+draft.document.public_token)).status,404,'draft links are private');
+  await Promise.all([call('documents/'+quote.id,'POST',{action:'issue'}),call('documents/'+quote.id,'POST',{action:'issue'})]);
+  const issued=await call('documents/'+quote.id);assert.match(issued.document.number,/^QT-\d+$/);
+  await call('documents/'+quote.id,'POST',{action:'edit',version:issued.document.version,data:input},409);
+  await assert.rejects(sql`UPDATE sales_documents SET total_cents=1 WHERE id=${quote.id}`,'database protects issued amounts');
+  const decide=await fetch(base+'/api/sales/public/'+issued.document.public_token,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({decision:'accepted',name:'Fixture Buyer',confirmed:true})});assert.equal(decide.status,200);
+  const orders=await Promise.all([call('documents/'+quote.id,'POST',{action:'order'}),call('documents/'+quote.id,'POST',{action:'order'})]);assert.equal(orders[0].id,orders[1].id,'conversion is idempotent');
+  const order=await call('documents/'+orders[0].id);assert.equal(order.document.total_cents,96700);assert.equal(order.document.snapshot.quoteNumber,issued.document.number);
+  const invoice=await call('documents/'+order.document.id,'POST',{action:'invoice',dueOn:'2030-01-01'});await call('documents/'+invoice.id,'POST',{action:'issue'});
+  const invoiceDoc=await call('documents/'+invoice.id);assert.equal(invoiceDoc.status,'issued','invoice is not automatically paid');
+  const delivery=await call('documents/'+order.document.id,'POST',{action:'delivery',deliveredBy:'Courier',recipientName:'Alex'});
+  for(const id of [quote.id,order.document.id,invoice.id,delivery.id]){const pdf=await fetch(base+'/api/admin/sales/documents/'+id+'?format=pdf',{headers});assert.equal(pdf.status,200);assert.equal(Buffer.from(await pdf.arrayBuffer()).subarray(0,5).toString(),'%PDF-')}
+  assert.equal((await call('documents/'+quote.id)).document.status,'converted');
+  // Further payment checks are appended in phase three.
+
  }finally{server.kill();await sql.end()}
 });

@@ -14,6 +14,6 @@ export function fail(error:unknown){
   return NextResponse.json({error:error instanceof SalesError?error.message:"Unable to complete the sales request. Please retry."},{status:error instanceof SalesError?error.status:503,headers:noStore});
 }
 export async function jsonBody(request:Request){
-  const raw=await request.text();if(raw.length>250000)throw new SalesError("Request too large.",413);
+  const raw=await request.text();if(raw.length>1000000)throw new SalesError("Request too large.",413);
   try{return JSON.parse(raw)}catch{throw new SalesError("Invalid JSON.")}
 }

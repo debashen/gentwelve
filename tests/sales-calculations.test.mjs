@@ -1,0 +1,6 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import {calculate,lineSchema} from '../lib/sales/calculations.ts';
+test('quote totals include discounted merchandise, per-unit branding and fixed charges',()=>{const line=lineSchema.parse({description:'Shirt',unitPriceCents:10000,quantity:10,discountBps:1000,brandingCents:500,setupCents:1000,otherCents:200});const t=calculate([line],500,false,1500);assert.equal(t.subtotalCents,106200);assert.equal(t.discountCents,10000);assert.equal(t.taxCents,0);assert.equal(t.totalCents,96700);const vat=calculate([line],500,true,1500);assert.equal(vat.taxCents,14505);assert.equal(vat.totalCents,111205)});
+test('rounding and tax exemptions are deterministic',()=>{const line=lineSchema.parse({description:'Example',unitPriceCents:101,quantity:1,discountBps:5000,taxable:false});const t=calculate([line],0,true,1500);assert.equal(t.discountCents,51);assert.equal(t.totalCents,50);assert.equal(t.taxCents,0)});
+test('invalid and excessive values cannot reach financial documents',()=>{assert.equal(lineSchema.safeParse({description:'x',quantity:0,unitPriceCents:1}).success,false);assert.throws(()=>calculate([lineSchema.parse({description:'x',quantity:1000000,unitPriceCents:100000000})],0,false,0))});
