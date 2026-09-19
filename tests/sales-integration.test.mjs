@@ -1,6 +1,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import postgres from 'postgres';
+import {randomUUID} from 'node:crypto';
 import {spawn} from 'node:child_process';
 import {setTimeout as delay} from 'node:timers/promises';
 const database=process.env.TEST_DATABASE_URL;
@@ -39,7 +40,20 @@ test('sales foundation API protects settings and persists customer data',{skip:!
   const delivery=await call('documents/'+order.document.id,'POST',{action:'delivery',deliveredBy:'Courier',recipientName:'Alex'});
   for(const id of [quote.id,order.document.id,invoice.id,delivery.id]){const pdf=await fetch(base+'/api/admin/sales/documents/'+id+'?format=pdf',{headers});assert.equal(pdf.status,200);assert.equal(Buffer.from(await pdf.arrayBuffer()).subarray(0,5).toString(),'%PDF-')}
   assert.equal((await call('documents/'+quote.id)).document.status,'converted');
-  // Further payment checks are appended in phase three.
+  const paymentPage=await fetch(base+'/pay/'+order.document.public_token);assert.equal(paymentPage.status,200);assert.ok((await paymentPage.text()).includes('AWAITING PAYMENT'));
+  const disabled=await fetch(base+'/api/payments/'+order.document.public_token,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({provider:'paystack'})});assert.equal(disabled.status,409);
+  await fetch(base+'/api/payments/return/'+order.document.public_token,{redirect:'manual'});assert.equal((await call('documents/'+order.document.id)).paid,0,'success URL cannot credit payments');
+  const receipt={amountCents:40000,reference:'BANK-'+randomUUID(),receivedOn:new Date().toISOString().slice(0,10),confirmed:true,requestId:randomUUID()};
+  await Promise.all([call('documents/'+order.document.id,'POST',{action:'eft',data:receipt}),call('documents/'+order.document.id,'POST',{action:'eft',data:receipt})]);
+  assert.equal((await call('documents/'+order.document.id)).paid,40000,'manual double-click does not double-credit');
+  assert.equal((await call('documents/'+invoice.id)).status,'partially_paid');
+  await call('documents/'+order.document.id,'POST',{action:'eft',data:{...receipt,reference:'OVER-'+randomUUID(),requestId:randomUUID(),amountCents:999999}},409);
+  await call('documents/'+order.document.id,'POST',{action:'eft',data:{...receipt,reference:'BANK-'+randomUUID(),requestId:randomUUID(),amountCents:56700}});
+  assert.equal((await call('documents/'+invoice.id)).status,'paid');assert.equal((await call('documents/'+order.document.id)).document.status,'paid');
+  const [payment]=await sql`SELECT id FROM sales_payments WHERE order_id=${order.document.id} AND status='succeeded' LIMIT 1`;
+  await assert.rejects(sql`UPDATE sales_payments SET amount_cents=1 WHERE id=${payment.id}`,'received payments are immutable');
+  const [count]=await sql`SELECT COUNT(*)::int AS n FROM sales_payments WHERE order_id=${order.document.id} AND invoice_id=${invoice.id}`;assert.equal(count.n,2);
+
 
  }finally{server.kill();await sql.end()}
 });

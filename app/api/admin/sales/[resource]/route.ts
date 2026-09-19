@@ -5,7 +5,8 @@ import { DB } from "@/lib/database";
 import { admin,fail,jsonBody,noStore } from "@/lib/sales/http";
 import { audit,createCustomer,getBusiness,getCustomer,SalesError } from "@/lib/sales/store";
 import { businessSchema,customerSchema,enquiryInput,sequenceSchema } from "@/lib/sales/validation";
-import { createQuote,effectiveStatus,type SalesDocument } from "@/lib/sales/documents";
+import { providerReadiness } from "@/lib/sales/providers";
+import { createQuote,type SalesDocument } from "@/lib/sales/documents";
 export const dynamic="force-dynamic";
 type Context={params:Promise<{resource:string}>};
 export async function GET(request:Request,context:Context){try{
@@ -17,18 +18,22 @@ export async function GET(request:Request,context:Context){try{
   if(resource==="documents"){
     const page=z.coerce.number().int().min(0).max(100000).parse(url.searchParams.get("page")||0);
     const conditions=["1=1"],values:unknown[]=[];
-    for(const [param,column] of [["kind","kind"],["customer","customer_id"],["status","status"]]){const value=url.searchParams.get(param);if(value){if(param==="customer")z.string().uuid().parse(value);conditions.push(`${column}=?`);values.push(value)}}
+    for(const [param,column] of [["kind","kind"],["customer","customer_id"],["status","effective_status"]]){const value=url.searchParams.get(param);if(value){if(param==="customer")z.string().uuid().parse(value);if(param==="status"&&url.searchParams.get("kind")==="order"&&["paid","pending_payment"].includes(value)){conditions.push(`status!='cancelled' AND paid_cents${value==="paid"?">=":"<"}total_cents`)}else{conditions.push(`${column}=?`);values.push(value)}}}
     const search=url.searchParams.get("q");if(search){conditions.push("(number ILIKE ? OR snapshot->'customer'->>'name' ILIKE ?)");values.push(`%${search.slice(0,200)}%`,`%${search.slice(0,200)}%`)}
-    const rows=await DB.prepare(`SELECT id,kind,number,status,total_cents,customer_id,snapshot->'customer'->>'name' AS customerName,expires_on,due_on,created_at FROM sales_documents WHERE ${conditions.join(" AND ")} ORDER BY created_at DESC LIMIT 51 OFFSET ?`).bind(...values,page*50).all<SalesDocument>();
-    return NextResponse.json({items:rows.results.slice(0,50).map(d=>({...d,status:effectiveStatus(d)})),hasMore:rows.results.length>50,page},{headers:noStore});
+    const rows=await DB.prepare(`SELECT id,kind,number,effective_status AS status,total_cents,paid_cents,customer_id,snapshot->'customer'->>'name' AS customerName,expires_on,due_on,created_at FROM sales_document_summary WHERE ${conditions.join(" AND ")} ORDER BY created_at DESC LIMIT 51 OFFSET ?`).bind(...values,page*50).all<SalesDocument>();
+    return NextResponse.json({items:rows.results.slice(0,50),hasMore:rows.results.length>50,page},{headers:noStore});
   }
   if(resource==="dashboard"){
-    const counts=await DB.prepare("SELECT kind,status,COUNT(*) AS count,COALESCE(SUM(total_cents),0) AS value FROM sales_documents GROUP BY kind,status").all();
-    const month=await DB.prepare("SELECT kind,COUNT(*) AS count,COALESCE(SUM(total_cents),0) AS value FROM sales_documents WHERE created_at>=date_trunc('month',now()) AND status!='cancelled' GROUP BY kind").all();
+    const customer=url.searchParams.get("customer");
+    if(customer){z.string().uuid().parse(customer);const summary=await DB.prepare("SELECT COUNT(*) AS orders,COALESCE(SUM(total_cents),0)::bigint AS value,COALESCE(SUM(paid_cents),0)::bigint AS paid,COALESCE(SUM(GREATEST(total_cents-paid_cents,0)),0)::bigint AS balance FROM sales_document_summary WHERE customer_id=?::uuid AND kind='order' AND status!='cancelled'").bind(customer).first();return NextResponse.json(summary,{headers:noStore})}
+
+    const counts=await DB.prepare("SELECT kind,effective_status AS status,COUNT(*) AS count,COALESCE(SUM(total_cents),0)::bigint AS value FROM sales_document_summary GROUP BY kind,effective_status").all();
+    const month=await DB.prepare("SELECT kind,COUNT(*) AS count,COALESCE(SUM(total_cents),0)::bigint AS value FROM sales_documents WHERE created_at>=date_trunc('month',now()) AND status!='cancelled' GROUP BY kind").all();
     const enquiries=await DB.prepare("SELECT COUNT(*) AS count FROM sales_enquiries WHERE status='new'").first();
-    return NextResponse.json({counts:counts.results,month:month.results,enquiries:enquiries?.count||0},{headers:noStore});
+    const balances=await DB.prepare("SELECT COALESCE(SUM(GREATEST(total_cents-paid_cents,0)) FILTER (WHERE kind='invoice' AND number IS NOT NULL AND status!='cancelled'),0)::bigint AS outstanding,COUNT(*) FILTER(WHERE kind='order' AND status!='cancelled' AND paid_cents>=total_cents) AS paidOrders,COUNT(*) FILTER(WHERE kind='order' AND status!='cancelled' AND paid_cents<total_cents) AS awaitingPayment,COUNT(*) FILTER(WHERE kind='invoice' AND number IS NOT NULL AND status!='cancelled' AND paid_cents<total_cents) AS outstandingInvoices FROM sales_document_summary").first();
+    return NextResponse.json({counts:counts.results,month:month.results,enquiries:enquiries?.count||0,...balances},{headers:noStore});
   }
-  if(resource==="settings")return NextResponse.json({...await getBusiness(),sequences:(await DB.prepare("SELECT kind,prefix,next_number AS nextNumber FROM sales_number_sequences ORDER BY kind").all()).results,contacts:(await DB.prepare("SELECT id,contact_name AS name FROM sales_contacts ORDER BY contact_name").all()).results},{headers:noStore});
+  if(resource==="settings")return NextResponse.json({...await getBusiness(),providerReadiness:providerReadiness(),sequences:(await DB.prepare("SELECT kind,prefix,next_number AS nextNumber FROM sales_number_sequences ORDER BY kind").all()).results,contacts:(await DB.prepare("SELECT id,contact_name AS name FROM sales_contacts ORDER BY contact_name").all()).results},{headers:noStore});
   if(resource==="customers"){
     const id=url.searchParams.get("id");if(id)return NextResponse.json(await getCustomer(z.string().uuid().parse(id)),{headers:noStore});
     const page=z.coerce.number().int().min(0).max(100000).parse(url.searchParams.get("page")||0);const q=`%${(url.searchParams.get("q")||"").slice(0,200)}%`;

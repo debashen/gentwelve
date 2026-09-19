@@ -1,0 +1,11 @@
+import {createHash,timingSafeEqual} from "node:crypto";
+export function equalSignature(expected:string,actual:string){return /^[a-f0-9]+$/i.test(actual)&&actual.length===expected.length&&timingSafeEqual(Buffer.from(expected.toLowerCase()),Buffer.from(actual.toLowerCase()))}
+export function decimalCents(value:unknown){const text=String(value);if(!/^\d{1,12}(\.\d{1,2})?$/.test(text))throw new Error("Invalid provider amount");const [whole,fraction=""]=text.split(".");const amount=Number(whole)*100+Number(fraction.padEnd(2,"0"));if(!Number.isSafeInteger(amount))throw new Error("Invalid provider amount");return amount}
+export const formEncode=(value:string)=>encodeURIComponent(value.trim()).replace(/%20/g,"+").replace(/[!'()*]/g,c=>`%${c.charCodeAt(0).toString(16).toUpperCase()}`);
+export function payfastPayload(fields:Record<string,string>){return Object.entries(fields).filter(([k,v])=>k!=="signature"&&v!=="").map(([k,v])=>`${k}=${formEncode(v)}`).join("&")}
+export function payfastSignature(fields:Record<string,string>,passphrase:string){return createHash("md5").update(`${payfastPayload(fields)}&passphrase=${formEncode(passphrase)}`).digest("hex")}
+export function ozowHash(fields:Record<string,string>,order:string[],secret:string){return createHash("sha512").update((order.map(k=>fields[k]||"").join("")+secret).toLowerCase()).digest("hex")}
+export const ozowRequestOrder=["SiteCode","CountryCode","CurrencyCode","Amount","TransactionReference","BankReference","Optional1","Optional2","Optional3","Optional4","Optional5","Customer","CancelUrl","ErrorUrl","SuccessUrl","NotifyUrl","IsTest"];
+export const ozowResponseOrder=["SiteCode","TransactionId","TransactionReference","Amount","Status","Optional1","Optional2","Optional3","Optional4","Optional5","CurrencyCode","IsTest","StatusMessage"];
+export async function providerFetch(url:string,init:RequestInit={}){const response=await fetch(url,{...init,cache:"no-store",redirect:"error",signal:AbortSignal.timeout(20000)});if(!response.ok)throw new Error("Provider unavailable");return response}
+export function formFields(raw:string){const params=new URLSearchParams(raw);const fields:Record<string,string>={};for(const [key,value] of params){if(key in fields)throw new Error("Duplicate provider field");fields[key]=value}return fields}
