@@ -27,3 +27,14 @@ test('streaming accepts nested objects and refuses truncated snapshots', async (
   await assert.rejects(async()=>{for await(const row of streamJsonObjects(new Response('[{"x":1},'))){void row}},/Incomplete/);
   await assert.rejects(async()=>{for await(const row of streamJsonObjects(new Response('{"error":"unavailable"}'))){void row}},/Incomplete/);
 });
+test('actual Amrod names retain SKU colour and size',()=>{
+ const v=extractProductVariants({simpleCode:'P',variants:[{fullCode:'P-BL-L',codeColourName:'Blue',codeSizeName:'Large'}]});
+ assert.equal(v[0].colour,'Blue');assert.equal(v[0].size,'Large');
+});
+test('supplier wrappers cannot silently hide pagination',async()=>{
+ await assert.rejects(async()=>{for await(const r of streamJsonObjects(new Response('{"items":[{"code":"P"}],"nextPage":2}'))){void r}},/unsupported/);
+});
+
+test('parent fullCode is not an additional SKU when embedded variants exist',()=>{
+ const variants=extractProductVariants({simpleCode:'P',fullCode:'P',variants:[{fullCode:'P-BL-L'}]});assert.deepEqual(variants.map(v=>v.fullCode),['P-BL-L']);
+});

@@ -2,7 +2,7 @@ import {createHmac} from "node:crypto";
 import type {PaymentAdapter} from "./types";
 import {equalSignature,providerFetch} from "./security";
 export const paystack:PaymentAdapter={
- configured:()=>Boolean(process.env.PAYSTACK_SECRET_KEY),testMode:()=>!process.env.PAYSTACK_SECRET_KEY?.startsWith("sk_live_"),
+ configured:()=>/^sk_(test|live)_.+/.test(process.env.PAYSTACK_SECRET_KEY||""),testMode:()=>!process.env.PAYSTACK_SECRET_KEY?.startsWith("sk_live_"),
  async start(input){
   if(!input.email)throw new Error("Customer email required");
   const response=await providerFetch("https://api.paystack.co/transaction/initialize",{method:"POST",headers:{Authorization:`Bearer ${process.env.PAYSTACK_SECRET_KEY}`,"content-type":"application/json"},body:JSON.stringify({email:input.email,amount:input.amountCents,currency:"ZAR",reference:input.reference,callback_url:input.returnUrl})});

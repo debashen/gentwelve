@@ -12,7 +12,7 @@ test('PostgreSQL production API: filters, exact variants, admin, bulk publicatio
   const server=spawn(process.execPath,['node_modules/next/dist/bin/next','start','-p','3107'],{env:{...process.env,DATABASE_URL:database,ADMIN_PASSWORD:'fixture-password',AUTH_SECRET:'fixture-secret-at-least-32-characters'},stdio:'ignore'});
   const base='http://127.0.0.1:3107';
   try{
-    await sql`TRUNCATE products,variants,catalogue_events,sync_runs RESTART IDENTITY`;
+    await sql`TRUNCATE products,variants,catalogue_events,sync_source_records,sync_runs RESTART IDENTITY`;
     for(const [code,name,curated,price] of [['SHIRT','Blue Golf Shirt',1,5000],['ZERO','Zero Stock',1,1000],['DRAFT','Draft Bag',0,8000]]){
       await sql`INSERT INTO products(supplier_code,name,category,image_url,public_price_cents,raw_json,curated,created_at,updated_at) VALUES(${code},${name},'Clothing','https://example.com/image.jpg',${price},'{}',${curated},'2026-09-17','2026-09-17')`;
     }
@@ -67,6 +67,13 @@ test('PostgreSQL production API: filters, exact variants, admin, bulk publicatio
     const failedStart=await fetch(base+'/api/admin/sync?type=products',{method:'POST',headers});const failedRun=await failedStart.json();
     const failed=await fetch(base+`/api/admin/sync?runId=${failedRun.runId}`,{method:'POST',headers});assert.equal(failed.status,503);
     const [progress]=await sql`SELECT products_received FROM sync_runs WHERE id=${failedRun.runId}`;assert.equal(progress.products_received,0);
+
+    const [stagedRun]=await sql`INSERT INTO sync_runs(mode,status,started_at,diagnostics) VALUES('changes','running','2026-09-19',${JSON.stringify({completeResponse:true,supplierRecords:2,duplicates:1})}::text::jsonb) RETURNING id`;
+    for(let ordinal=0;ordinal<2;ordinal++)await sql`INSERT INTO sync_source_records(run_id,ordinal,payload) VALUES(${stagedRun.id},${ordinal},${JSON.stringify({simpleCode:'STAGED',productName:'Stable snapshot product'})}::text::jsonb)`;
+    const staged=await get(`/api/admin/sync?runId=${stagedRun.id}`,{method:'POST',headers});assert.equal(staged.status,'complete');assert.equal(staged.diagnostics.duplicates,1);
+    assert.equal((await sql`SELECT COUNT(*)::int AS n FROM products WHERE supplier_code='STAGED'`)[0].n,1,'duplicate supplier codes upsert one parent');
+    assert.equal((await sql`SELECT COUNT(*)::int AS n FROM sync_source_records WHERE run_id=${stagedRun.id}`)[0].n,0,'completed source payloads are released');
+    assert.equal((await get(`/api/admin/sync?runId=${stagedRun.id}`,{method:'POST',headers})).status,'complete','replay is idempotent');
 
   }finally{server.kill();await sql.end()}
 });

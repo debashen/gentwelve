@@ -1,6 +1,8 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import postgres from 'postgres';
+import {mkdir,writeFile} from 'node:fs/promises';
+import {execFileSync} from 'node:child_process';
 import {randomUUID} from 'node:crypto';
 import {spawn} from 'node:child_process';
 import {setTimeout as delay} from 'node:timers/promises';
@@ -24,7 +26,21 @@ test('sales foundation API protects settings and persists customer data',{skip:!
   await call('customers','PUT',{id:customer.id,data:{...saved.data,contactPerson:'Alex'},version:saved.version});
   await call('customers','PUT',{id:customer.id,data:saved.data,version:saved.version},409);
   const result=await call('customers?q=Sales%20Fixture');assert.ok(result.items.some(c=>c.id===customer.id));
-  const input={customerId:customer.id,reference:'TEST-REF',lines:[{productCode:'MANUAL-001',description:'Manual item',unitPriceCents:10000,quantity:10,discountBps:1000,brandingCents:500,setupCents:1000,otherCents:200}],deliveryCents:500};
+  // Real supplier field names; never return the raw record or supplier costs.
+  const raw={simpleCode:'QA-POLO',productName:'QA Polo',brandings:[{positionName:'CHEST',positionCode:'A',method:[{brandingName:'Embroidery',brandingCode:'EM',numberOfColours:'4',maxPrintingSizeWidth:'90',maxPrintingSizeHeight:'60'}]}],variants:[{simpleCode:'QA-POLO',fullCode:'QA-POLO-BL-L',codeColourName:'Blue',codeSizeName:'Large'}]};
+  await sql`INSERT INTO products(supplier_code,name,category,brand,image_url,public_price_cents,supplier_price_cents,raw_json,created_at,updated_at) VALUES('QA-POLO','QA Polo','Uniforms','QA Brand','/gentwelve-icon.png',10000,5000,${JSON.stringify(raw)},'2026-09-19','2026-09-19') ON CONFLICT(supplier_code) DO UPDATE SET raw_json=EXCLUDED.raw_json`;
+  await sql`INSERT INTO variants(product_code,full_code,colour,size,stock_quantity,public_price_cents,supplier_price_cents,updated_at) VALUES('QA-POLO','QA-POLO-BL-L','Blue','Large',34,10000,5000,'2026-09-19') ON CONFLICT(full_code) DO UPDATE SET stock_quantity=34,active=1`;
+  for(const q of ['QA-POLO','QA Polo','Uniforms','QA Brand'])assert.ok((await call('products?q='+encodeURIComponent(q))).items.some(p=>p.code==='QA-POLO'));
+  const product=await call('products?code=QA-POLO');assert.equal(product.variants[0].stock,34);assert.equal(product.branding[0].method,'Embroidery');assert.equal(product.branding[0].position,'CHEST');assert.ok(!JSON.stringify(product).includes('supplier_price'));assert.equal(product.product.raw,undefined);
+  const selection={productCode:'QA-POLO',variantCode:'QA-POLO-BL-L',description:'Untrusted title',colour:'invalid',quantity:35,unitPriceCents:10000,brandingMethod:'Embroidery',brandingCode:'EM',brandingPosition:'CHEST',brandingCents:500,setupCents:1000};
+  await call('documents','POST',{customerId:customer.id,lines:[selection]},400);
+  const selected=await call('documents','POST',{customerId:customer.id,lines:[{...selection,stockOverride:true}]});
+  const selectedDoc=(await call('documents/'+selected.id)).document;assert.equal(selectedDoc.snapshot.totals.lines[0].colour,'Blue');assert.equal(selectedDoc.snapshot.totals.lines[0].stockSnapshot,34);assert.equal(selectedDoc.snapshot.totals.lines[0].description,'QA Polo');
+  await call('documents/'+selected.id,'POST',{action:'issue'});
+  await sql`UPDATE products SET name='Supplier changed name',public_price_cents=99999 WHERE supplier_code='QA-POLO'`;
+  assert.deepEqual((await call('documents/'+selected.id)).document.snapshot,selectedDoc.snapshot,'issued product/branding snapshot is immutable');
+  await sql`UPDATE products SET name='QA Polo',public_price_cents=10000 WHERE supplier_code='QA-POLO'`;
+  const input={customerId:customer.id,reference:'TEST-REF',lines:[{productCode:'MANUAL-001',description:'Premium cotton polo shirt',colour:'Blue',size:'Large',brandingMethod:'Embroidery',brandingPosition:'Left chest',unitPriceCents:10000,quantity:10,discountBps:1000,brandingCents:500,setupCents:1000,otherCents:200}],deliveryCents:500};
   const quote=await call('documents','POST',input);
   const draft=await call('documents/'+quote.id);assert.equal(draft.document.number,null);assert.equal(draft.document.total_cents,96700);assert.equal(draft.document.snapshot.customer.notes,undefined);
   assert.equal((await fetch(base+'/q/'+draft.document.public_token)).status,404,'draft links are private');
@@ -38,7 +54,8 @@ test('sales foundation API protects settings and persists customer data',{skip:!
   const invoice=await call('documents/'+order.document.id,'POST',{action:'invoice',dueOn:'2030-01-01'});await call('documents/'+invoice.id,'POST',{action:'issue'});
   const invoiceDoc=await call('documents/'+invoice.id);assert.equal(invoiceDoc.status,'issued','invoice is not automatically paid');
   const delivery=await call('documents/'+order.document.id,'POST',{action:'delivery',deliveredBy:'Courier',recipientName:'Alex'});
-  for(const id of [quote.id,order.document.id,invoice.id,delivery.id]){const pdf=await fetch(base+'/api/admin/sales/documents/'+id+'?format=pdf',{headers});assert.equal(pdf.status,200);assert.equal(Buffer.from(await pdf.arrayBuffer()).subarray(0,5).toString(),'%PDF-')}
+  await mkdir('outputs/sales-qa',{recursive:true});
+  for(const id of [quote.id,order.document.id,invoice.id,delivery.id]){const pdf=await fetch(base+'/api/admin/sales/documents/'+id+'?format=pdf',{headers});assert.equal(pdf.status,200);const bytes=Buffer.from(await pdf.arrayBuffer());assert.equal(bytes.subarray(0,5).toString(),'%PDF-');const kind=id===quote.id?'quote':id===order.document.id?'order':id===invoice.id?'invoice':'delivery';const file=`outputs/sales-qa/${kind}.pdf`;await writeFile(file,bytes);const text=execFileSync(process.env.PDFTOTEXT_BIN||'pdftotext',[file,'-'],{encoding:'utf8'});assert.ok(text.includes('Embroidery'));assert.ok(!text.includes('VAT:'));if(kind==='delivery'){assert.ok(!/Grand total|Unit price|Subtotal|R 100/.test(text));assert.ok(!/\d+\.\d{2}/.test(text),'delivery note has no monetary amounts')}}
   assert.equal((await call('documents/'+quote.id)).document.status,'converted');
   const paymentPage=await fetch(base+'/pay/'+order.document.public_token);assert.equal(paymentPage.status,200);assert.ok((await paymentPage.text()).includes('AWAITING PAYMENT'));
   const disabled=await fetch(base+'/api/payments/'+order.document.public_token,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({provider:'paystack'})});assert.equal(disabled.status,409);

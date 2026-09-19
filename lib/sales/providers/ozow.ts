@@ -1,7 +1,7 @@
 import type {PaymentAdapter} from "./types";
 import {decimalCents,equalSignature,formFields,ozowHash,ozowRequestOrder,ozowResponseOrder,providerFetch} from "./security";
 export const ozow:PaymentAdapter={
- configured:()=>Boolean(process.env.OZOW_SITE_CODE&&process.env.OZOW_PRIVATE_KEY&&process.env.OZOW_API_KEY),testMode:()=>process.env.OZOW_TEST_MODE==="true",
+ configured:()=>["true","false"].includes(process.env.OZOW_TEST_MODE||"")&&Boolean(process.env.OZOW_SITE_CODE&&process.env.OZOW_PRIVATE_KEY&&process.env.OZOW_API_KEY),testMode:()=>process.env.OZOW_TEST_MODE==="true",
  async start(input){
   const fields:Record<string,string>={SiteCode:process.env.OZOW_SITE_CODE!,CountryCode:"ZA",CurrencyCode:"ZAR",Amount:(input.amountCents/100).toFixed(2),TransactionReference:input.reference,BankReference:input.orderNumber.slice(0,20),Optional1:"",Optional2:"",Optional3:"",Optional4:"",Optional5:"",Customer:input.customerName.slice(0,100),CancelUrl:input.returnUrl,ErrorUrl:input.returnUrl,SuccessUrl:input.returnUrl,NotifyUrl:input.notifyUrl,IsTest:String(input.testMode)};
   fields.HashCheck=ozowHash(fields,ozowRequestOrder,process.env.OZOW_PRIVATE_KEY!);return {type:"form",url:"https://pay.ozow.com",fields};

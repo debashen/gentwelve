@@ -2,6 +2,7 @@ import {randomBytes,randomUUID} from "node:crypto";
 import {z} from "zod";
 import {DB} from "@/lib/database";
 import {audit,createCustomer,getBusiness,getCustomer,SalesError} from "./store";
+import {brandingOptions} from "./branding";
 import {customerSchema,type Business,type Customer} from "./validation";
 import {calculate,lineSchema,type Totals} from "./calculations";
 export const quoteInput=z.object({customerId:z.string().uuid().optional(),newCustomer:customerSchema.optional(),enquiryId:z.string().uuid().optional(),salespersonId:z.string().max(80).optional(),reference:z.string().max(200).default(""),expiresOn:z.string().date().optional(),lines:z.array(lineSchema).min(1).max(150),deliveryCents:z.number().int().min(0).max(100000000).default(0),notes:z.string().max(5000).default("")}).strict().refine(v=>Boolean(v.customerId)!==Boolean(v.newCustomer),"Choose a customer or create one.");
@@ -18,8 +19,8 @@ export async function getPublicDocument(token:string){
 }
 export function effectiveStatus(doc:SalesDocument,paid=0){
  if(doc.status==="cancelled")return "cancelled";
- if(doc.kind==="quote"&&["sent","viewed"].includes(doc.status)&&doc.expires_on&&String(doc.expires_on).slice(0,10)<new Date().toISOString().slice(0,10))return "expired";
- if(doc.kind==="invoice"&&doc.number){if(paid>=doc.total_cents)return "paid";if(paid>0)return "partially_paid";if(doc.due_on&&String(doc.due_on).slice(0,10)<new Date().toISOString().slice(0,10))return "overdue";}
+ if(doc.kind==="quote"&&["sent","viewed"].includes(doc.status)&&doc.expires_on&&new Date(doc.expires_on).toISOString().slice(0,10)<new Date().toISOString().slice(0,10))return "expired";
+ if(doc.kind==="invoice"&&doc.number){if(paid>=doc.total_cents)return "paid";if(paid>0)return "partially_paid";if(doc.due_on&&new Date(doc.due_on).toISOString().slice(0,10)<new Date().toISOString().slice(0,10))return "overdue";}
  return doc.status;
 }
 export async function allocateNumber(kind:string){
@@ -35,6 +36,16 @@ async function quoteSnapshot(input:z.infer<typeof quoteInput>,actor:string){
  const salesperson=await DB.prepare("SELECT id,contact_name AS name,whatsapp_number AS whatsapp FROM sales_contacts WHERE id=?").bind(salespersonId).first<Snapshot["salesperson"]>();
  if(!salesperson)throw new SalesError("Salesperson not found.");
  const {notes:internalNotes,...publicCustomer}=customer.data;void internalNotes;
+ for(const line of input.lines){
+  if(!line.variantCode)continue;
+  const variant=await DB.prepare(`SELECT v.full_code AS code,v.colour,v.size,v.stock_quantity AS stock,COALESCE(v.image_url,p.image_url,'') AS image,p.name,p.updated_at AS updated,p.raw_json AS raw FROM variants v JOIN products p ON p.supplier_code=v.product_code WHERE v.full_code=? AND p.supplier_code=? AND v.active=1 AND p.active=1`).bind(line.variantCode,line.productCode).first<{code:string;colour:string;size:string;stock:number|null;image:string;name:string;updated:string;raw:string}>();
+  if(!variant)throw new SalesError("Selected catalogue variant is no longer available. Choose another variant.");
+  if(variant.stock!==null&&line.quantity>variant.stock&&!line.stockOverride)throw new SalesError("Quantity exceeds current stock. Confirm the incoming-stock override before saving.");
+  if(line.brandingCode){let raw:Record<string,unknown>={};try{raw=JSON.parse(variant.raw)}catch{}
+   if(!brandingOptions(raw).some(o=>o.code===line.brandingCode&&o.position===line.brandingPosition&&o.method===line.brandingMethod))throw new SalesError("Choose a valid catalogue branding method and position.");
+  }
+  Object.assign(line,{description:variant.name,colour:variant.colour||"",size:variant.size||"",image:variant.image,stockSnapshot:variant.stock,catalogueUpdatedAt:String(variant.updated)});
+ }
  let totals:Totals;try{totals=calculate(input.lines,input.deliveryCents,business.vatRegistered,business.vatRateBps)}catch{throw new SalesError("Document value exceeds the supported limit.")}
  const snapshot:Snapshot={customer:publicCustomer,business,salesperson,reference:input.reference,notes:input.notes,terms:business.quoteTerms,totals};
  const expiresOn=input.expiresOn||new Date(Date.now()+business.quoteValidityDays*86400000).toISOString().slice(0,10);
@@ -53,7 +64,7 @@ export async function editQuote(id:string,raw:unknown,version:number,actor:strin
 })}
 export async function issueDocument(id:string,actor:string){return DB.transaction(async()=>{
  const doc=await getDocument(id,true);if(doc.number)return {id};if(!["quote","invoice"].includes(doc.kind)||doc.status!=="draft")throw new SalesError("Document cannot be issued.",409);
- if(doc.kind==="quote"&&doc.expires_on&&String(doc.expires_on).slice(0,10)<new Date().toISOString().slice(0,10))throw new SalesError("Set a future quotation expiry date before issuing.");
+ if(doc.kind==="quote"&&doc.expires_on&&new Date(doc.expires_on).toISOString().slice(0,10)<new Date().toISOString().slice(0,10))throw new SalesError("Set a future quotation expiry date before issuing.");
  const seq=await allocateNumber(doc.kind);
  await DB.prepare("UPDATE sales_documents SET number=?,sequence_number=?,status=?,issued_at=now(),version=version+1,updated_at=now() WHERE id=?::uuid").bind(seq.number,seq.sequence,doc.kind==="quote"?"sent":"issued",id).run();await audit(id,doc.kind==="quote"?"quotation_sent":"invoice_issued",actor,{number:seq.number});return {id};
 })}

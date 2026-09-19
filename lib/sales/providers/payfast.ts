@@ -3,7 +3,7 @@ import type {PaymentAdapter} from "./types";
 import {decimalCents,equalSignature,formFields,payfastPayload,payfastSignature,providerFetch} from "./security";
 const origin=()=>process.env.PAYFAST_SANDBOX==="true"?"https://sandbox.payfast.co.za":"https://www.payfast.co.za";
 export const payfast:PaymentAdapter={
- configured:()=>Boolean(process.env.PAYFAST_MERCHANT_ID&&process.env.PAYFAST_MERCHANT_KEY&&process.env.PAYFAST_PASSPHRASE),testMode:()=>process.env.PAYFAST_SANDBOX==="true",
+ configured:()=>["true","false"].includes(process.env.PAYFAST_SANDBOX||"")&&Boolean(process.env.PAYFAST_MERCHANT_ID&&process.env.PAYFAST_MERCHANT_KEY&&process.env.PAYFAST_PASSPHRASE),testMode:()=>process.env.PAYFAST_SANDBOX==="true",
  async start(input){
   if(!input.email)throw new Error("Customer email required");
   // Onsite initialization keeps merchant credentials entirely on the server.

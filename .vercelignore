@@ -9,3 +9,5 @@ outputs
 work
 .agents
 .codex
+
+.playwright-cli/

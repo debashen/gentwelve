@@ -1,6 +1,12 @@
+import {brandingOptions,type BrandingOption} from "./sales/branding";
+import {productDescriptionHtml,productImages} from "./product-content";
 import { env } from "@/lib/runtime";
 
 export type ProductPageProduct = {
+  id:number;
+  descriptionHtml:string;
+  images:string[];
+  branding:BrandingOption[];
   code: string;
   name: string;
   description: string;
@@ -17,7 +23,7 @@ export type ProductPageVariant = {
   code: string;
   colour: string;
   size: string;
-  stock: number;
+  stock: number|null;
   priceCents: number;
 };
 
@@ -29,11 +35,11 @@ export type RelatedProduct = {
   priceCents: number;
 };
 
-type ProductRow = Omit<ProductPageProduct, "methods"> & { methods: string };
+type ProductRow = Omit<ProductPageProduct, "methods"|"descriptionHtml"|"images"|"branding"> & { methods: string;raw:string };
 
 export async function getProductPageData(code: string) {
   const product = await env.DB.prepare(
-    `SELECT supplier_code AS code, name, COALESCE(description, '') AS description,
+    `SELECT id,raw_json AS raw,supplier_code AS code, name, COALESCE(description, '') AS description,
       COALESCE(category, 'Products') AS category, COALESCE(brand, '') AS brand,
       image_url AS image, COALESCE((SELECT MIN(v.public_price_cents) FROM variants v
         WHERE v.product_code = products.supplier_code AND v.active = 1
@@ -54,7 +60,7 @@ export async function getProductPageData(code: string) {
     env.DB.prepare(
       `SELECT full_code AS code, COALESCE(colour, '') AS colour, COALESCE(size, '') AS size,
         stock_quantity AS stock, COALESCE(public_price_cents, ?) AS priceCents
-       FROM variants WHERE product_code = ? AND active = 1 AND COALESCE(stock_quantity, 0) > 0
+       FROM variants WHERE product_code = ? AND active = 1
        ORDER BY COALESCE(colour, ''), COALESCE(size, ''), full_code`,
     ).bind(product.priceCents, code).all<ProductPageVariant>(),
     env.DB.prepare(
@@ -75,13 +81,15 @@ export async function getProductPageData(code: string) {
     if (Array.isArray(parsed)) methods = parsed.map(String);
   } catch { /* keep the product page available */ }
 
+  let raw:Record<string,unknown>={};try{raw=JSON.parse(product.raw)}catch{}
+  const {raw:privateRaw,...safe}=product;void privateRaw;
   return {
-    product: { ...product, methods } as ProductPageProduct,
+    product: { ...safe, methods,descriptionHtml:productDescriptionHtml(product.description),images:productImages(raw,product.image),branding:brandingOptions(raw) } as ProductPageProduct,
     variants: variants.results.map((variant) => ({
       ...variant,
       colour: String(variant.colour ?? "").trim(),
       size: String(variant.size ?? "").trim(),
-      stock: Math.max(0, Number(variant.stock ?? 0)),
+      stock: variant.stock===null?null:Math.max(0, Number(variant.stock)),
       priceCents: Math.max(0, Number(variant.priceCents ?? product.priceCents)),
     })),
     related: related.results,

@@ -1,3 +1,5 @@
+import {BasketProvider} from "./components/quote/basket-provider";
+import "./quote/quote.css";
 import { siteUrl } from "@/lib/site-url";
 import type { Metadata } from "next";
 import "./globals.css";
@@ -36,7 +38,7 @@ export default function RootLayout({
         <link rel="stylesheet" href="https://use.typekit.net/nqr0cal.css" />
         <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(organisation) }} />
       </head>
-      <body className="antialiased">{children}</body>
+      <body className="antialiased"><BasketProvider>{children}</BasketProvider></body>
     </html>
   );
 }

@@ -1,36 +1,25 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ArrowLeft, ArrowUpRight, Check, Copy, MessageCircle } from "lucide-react";
 import type { ProductPageProduct, ProductPageVariant, RelatedProduct } from "@/lib/catalogue-product";
 
-import BrandingSelector from "@/app/components/branding-selector";
+import CampaignSlots from "@/app/components/campaigns/campaign-slots";
+import AddProduct from "@/app/components/quote/add-product";
+import {BasketLink} from "@/app/components/quote/basket-provider";
 import { enquiryPath } from "@/lib/whatsapp";
 
 const formatPrice = (cents: number) => Math.ceil(cents / 100).toLocaleString("en-ZA");
-const quantityOptions = (minimum: number) => {
-  const start = Math.max(1, minimum || 1);
-  const values = [start, 25, 50, 100, 250].filter((value, index, list) => value >= start && list.indexOf(value) === index).slice(0, 4).map(String);
-  if (start <= 500) values.push("500+");
-  return ["Not sure", ...values];
-};
 
 export default function ProductDetail({ product, variants, related }: { product: ProductPageProduct; variants: ProductPageVariant[]; related: RelatedProduct[] }) {
-  const [colour, setColour] = useState("");
-  const [size, setSize] = useState("");
-  const [quantity, setQuantity] = useState("Not sure");
-  const [branding, setBranding] = useState("Not sure");
+  const [gallery,setGallery]=useState(product.image);
+
   const [copied, setCopied] = useState(false);
   const [pageUrl, setPageUrl] = useState("");
   const session = useRef("");
 
-  const colours = useMemo(() => [...new Set(variants.filter((variant) => !size || variant.size === size).map((variant) => variant.colour).filter(Boolean))], [variants, size]);
-  const sizes = useMemo(() => [...new Set(variants.filter((variant) => !colour || variant.colour === colour).map((variant) => variant.size).filter(Boolean))], [variants, colour]);
-  const matching = variants.filter((variant) => (!colour || variant.colour === colour) && (!size || variant.size === size));
-  const stock = matching.reduce((total, variant) => total + variant.stock, 0);
-  const priceCents = matching.length ? Math.min(...matching.map((variant) => variant.priceCents)) : product.priceCents;
-  const selection = [colour && `colour ${colour}`, size && `size ${size}`].filter(Boolean).join(", ");
+  const stock=product.stock,priceCents=product.priceCents;
 
   useEffect(() => {
     const timer=window.setTimeout(()=>setPageUrl(window.location.href),0);
@@ -51,32 +40,29 @@ export default function ProductDetail({ product, variants, related }: { product:
   };
 
   const shareMessage = `Take a look at ${product.name} from Gentwelve Printing Co: `;
-  const quoteUrl = enquiryPath(product.code, quantity, branding, colour, size);
+  const quoteUrl = enquiryPath(product.code, "Not sure", "Not sure");
 
   return <main className="product-page">
     <header className="product-page-header">
       <Link href="/" aria-label="Gentwelve catalogue"><img src="/gentwelve-web-logo-w.svg" alt="Gentwelve Printing Co" /></Link>
-      <Link className="back-to-catalogue" href="/"><ArrowLeft /> Back to catalogue</Link>
+      <BasketLink/><Link className="back-to-catalogue" href="/"><ArrowLeft /> Back to catalogue</Link>
     </header>
 
+    <CampaignSlots page="product" category={product.category} product={product.code}/>
     <section className="product-detail-shell">
-      <div className="product-detail-image"><img src={product.image} alt={product.name} /></div>
+      <div className="product-gallery"><div className="product-detail-image"><img src={gallery} alt={product.name} /></div>{product.images.length>1&&<div className="product-gallery-thumbs">{product.images.map((url,i)=><button key={url} onClick={()=>setGallery(url)} aria-label={`View image ${i+1}`}><img src={url} alt=""/></button>)}</div>}</div>
       <div className="product-detail-copy">
         <span className="product-detail-code">{product.brand || product.category} · {product.code}</span>
         <h1>{product.name}</h1>
-        {product.description && <p className="product-description">{product.description}</p>}
+        {product.description && <div className="product-rich-description" dangerouslySetInnerHTML={{__html:product.descriptionHtml}}/>}
         <div className="product-detail-price">From R{formatPrice(priceCents)} each* <small>Product only</small></div>
         <div className="product-detail-facts">
-          <span><small>Minimum order</small>{product.minimumQuantity || "Ask us"}</span>
-          <span><small>{selection ? "Selected stock" : "Stock across variants"}</small>{stock.toLocaleString("en-ZA")} units available</span>
+          {product.minimumQuantity>0&&<span><small>Minimum order</small>{product.minimumQuantity}</span>}
+          <span><small>Stock across variants</small>{stock.toLocaleString("en-ZA")} units available</span>
         </div>
 
-        {colours.length > 0 && <div className="detail-option-group"><p>Choose a colour</p><div className="variant-options"><button className={!colour ? "active" : ""} onClick={() => setColour("")}>Any colour</button>{colours.map((value) => <button className={colour === value ? "active" : ""} onClick={() => setColour(value)} key={value}>{value}</button>)}</div></div>}
-        {sizes.length > 0 && <div className="detail-option-group"><p>Choose a size</p><div className="variant-options"><button className={!size ? "active" : ""} onClick={() => setSize("")}>Any size</button>{sizes.map((value) => <button className={size === value ? "active" : ""} onClick={() => setSize(value)} key={value}>{value}</button>)}</div></div>}
-        {product.methods.length > 0 && <div className="detail-option-group"><p>Available branding methods</p><div className="methods">{product.methods.map((method) => <span key={method}>{method}</span>)}</div></div>}
-        <fieldset className="detail-quantity"><legend>How many do you need?</legend><div className="quantities">{quantityOptions(product.minimumQuantity).map((value) => <button className={quantity === value ? "active" : ""} onClick={() => setQuantity(value)} key={value}>{value}</button>)}</div></fieldset>
-        <BrandingSelector value={branding} onChange={setBranding} />
-        <a className="quote-button" href={quoteUrl} target="_blank" rel="noreferrer" onClick={() => { try { void fetch("/api/events", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ eventType: "whatsapp_click", productCode: product.code, quantity, sessionId: session.current }), keepalive: true }).catch(()=>{}); } catch {} }}><MessageCircle /> Get a branded quote</a>
+        <AddProduct product={product} variants={variants}/>
+        <a className="product-detail-secondary" href={quoteUrl} target="_blank" rel="noreferrer">Prefer to chat? Contact us on WhatsApp</a>
         <div className="share-actions"><a href={`https://wa.me/?text=${encodeURIComponent(`${shareMessage}${pageUrl}`)}`} target="_blank" rel="noreferrer"><MessageCircle /> Share on WhatsApp</a><button onClick={copyLink}>{copied ? <Check /> : <Copy />}{copied ? "Link copied" : "Copy product link"}</button></div>
         <small className="detail-fine-print">Stock is based on the latest supplier update and is confirmed when we quote. Branding, setup and delivery are quoted separately.</small>
       </div>

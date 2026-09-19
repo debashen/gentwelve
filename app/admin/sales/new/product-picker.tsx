@@ -1,0 +1,27 @@
+"use client";
+import {useEffect,useState} from "react";
+import type {Line} from "@/lib/sales/calculations";
+import type {BrandingOption} from "@/lib/sales/branding";
+import {money} from "@/lib/sales/validation";
+import {api,Field,Notice} from "../ui";
+type Product={code:string;name:string;image:string;priceCents:number|null;stock:number};
+type Variant={code:string;colour:string;size:string;stock:number|null;priceCents:number|null;image:string};
+type Detail={product:Product;variants:Variant[];branding:BrandingOption[]};
+export default function ProductPicker({onAdd}:{onAdd:(line:Line)=>void}){
+ const[q,setQ]=useState(""),[items,setItems]=useState<Product[]>([]),[detail,setDetail]=useState<Detail|null>(null),[colour,setColour]=useState(""),[code,setCode]=useState(""),[qty,setQty]=useState(1),[branding,setBranding]=useState(""),[price,setPrice]=useState(0),[setup,setSetup]=useState(0),[override,setOverride]=useState(false),[error,setError]=useState(""),[loading,setLoading]=useState(false);
+ useEffect(()=>{let active=true;const timer=setTimeout(async()=>{if(q.trim().length<2){setItems([]);return}try{setLoading(true);const r=await api(`products?q=${encodeURIComponent(q)}`);if(active)setItems(r.items)}catch(e){if(active)setError((e as Error).message)}finally{if(active)setLoading(false)}},250);return()=>{active=false;clearTimeout(timer)}},[q]);
+ const variant=detail?.variants.find(v=>v.code===code),option=detail?.branding[Number(branding)],over=variant?.stock!==null&&variant?.stock!==undefined&&qty>variant.stock;
+ return <div className="catalogue-picker"><Field label="Search code, product, category or brand" value={q} onChange={setQ}/><Notice error={error}/>{loading&&<p role="status">Searching catalogue…</p>}{q.length>=2&&!loading&&!items.length&&<p>No matching products.</p>}
+ <div className="picker-results">{items.map(p=><button type="button" className="picker-result" key={p.code} onClick={async()=>{try{setLoading(true);const d:Detail=await api(`products?code=${encodeURIComponent(p.code)}`);setDetail(d);setColour(d.variants[0]?.colour||"");setCode(d.variants[0]?.code||"");setQty(1);setBranding("");setPrice(0);setSetup(0);setOverride(false);setQ("");setItems([])}catch(e){setError((e as Error).message)}finally{setLoading(false)}}}>{p.image&&<img src={p.image} alt=""/>}<span><small>{p.code}</small><strong>{p.name}</strong><small>{p.stock} in stock</small></span><b>{p.priceCents===null?"Price required":`From ${money(p.priceCents)}`}</b></button>)}</div>
+ {detail&&<section className="picker-selection"><div className="sales-actions"><strong>{detail.product.code} · {detail.product.name}</strong><button type="button" className="secondary" onClick={()=>setDetail(null)}>Close</button></div><div className="sales-form">
+ <label>Colour<select value={colour} onChange={e=>{setColour(e.target.value);setCode(detail.variants.find(v=>v.colour===e.target.value)?.code||"");setOverride(false)}}>{[...new Set(detail.variants.map(v=>v.colour))].map(c=><option key={c} value={c}>{c||"Standard"}</option>)}</select></label>
+ <label>Size / variant<select value={code} onChange={e=>{setCode(e.target.value);setOverride(false)}}>{detail.variants.filter(v=>v.colour===colour).map(v=><option key={v.code} value={v.code}>{v.size||"Standard"} · {v.code}</option>)}</select></label>
+ <Field label="Quantity" type="number" value={qty} onChange={v=>{setQty(Number(v));setOverride(false)}}/>
+ <label>Branding method / position<select value={branding} onChange={e=>{setBranding(e.target.value);setPrice(0);setSetup(0)}}><option value="">Unbranded</option>{detail.branding.map((b,i)=><option key={i} value={i}>{b.method} · {b.position}</option>)}</select></label>
+ {branding!==""&&<><Field label="Branding selling price per unit (R)" type="number" value={price} onChange={v=>setPrice(Number(v))}/><Field label="Setup selling fee (R)" type="number" value={setup} onChange={v=>setSetup(Number(v))}/></>}
+ </div><p className="stock-readout">{variant?`${variant.colour||"Standard"} / ${variant.size||"Standard"}: ${variant.stock===null?"stock unconfirmed":`${variant.stock} available`} · ${variant.priceCents===null?"selling price required":money(variant.priceCents)}`:"No active variants; use a manual line."}</p>
+ {branding!==""&&<p className="sales-muted">{option?.colours} · Print area {option?.width} × {option?.height} mm. Confirm selling charges from your supplier quote; automatic branding pricing is not available for this feed.</p>}
+ {over&&<label className="sales-check sales-error"><input type="checkbox" checked={override} onChange={e=>setOverride(e.target.checked)}/>Quantity exceeds current stock. As an admin, I approve quoting against incoming stock.</label>}
+ <button type="button" disabled={!variant||qty<1||!Number.isInteger(qty)||(over&&!override)||variant.priceCents===null} onClick={()=>{if(!variant)return;onAdd({productCode:detail.product.code,description:detail.product.name,variantCode:variant.code,image:variant.image||detail.product.image,colour:variant.colour,size:variant.size,stockSnapshot:variant.stock,stockOverride:override,quantity:qty,unitPriceCents:variant.priceCents||0,discountBps:0,brandingCents:Math.round(price*100),setupCents:Math.round(setup*100),otherCents:0,taxable:true,...(branding!==""&&option?{brandingMethod:option.method,brandingPosition:option.position,brandingCode:option.code,brandingPositions:1}:{})});setDetail(null)}}>Add to quotation</button></section>}
+ </div>
+}

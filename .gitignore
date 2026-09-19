@@ -47,3 +47,5 @@ next-env.d.ts
 /work/
 
 *.tsbuildinfo
+
+.playwright-cli/

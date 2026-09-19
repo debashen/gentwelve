@@ -62,3 +62,9 @@ export async function confirmEft(orderId:string,raw:unknown,actor:string){const 
  await audit(orderId,"payment_manually_confirmed",actor,{paymentId:id,amountCents:input.amountCents,reference:input.reference});
  if(input.amountCents===due&&order.status==="pending_payment")await DB.prepare("UPDATE sales_documents SET status='paid',version=version+1,updated_at=now() WHERE id=?::uuid").bind(orderId).run();return {id};
 })}
+
+export async function documentPaymentOptions(doc:SalesDocument){
+ const methods=await paymentMethods();const order=doc.kind==="order"?doc:doc.order_id?await getDocument(doc.order_id):null;
+ const {siteUrl}=await import("../site-url");
+ return {eft:methods.includes("eft")&&Boolean(doc.snapshot.business.providers.eft),url:order&&order.status!=="cancelled"&&methods.some(m=>m!=="eft"&&doc.snapshot.business.providers[m as OnlineProvider])?`${siteUrl}/pay/${order.public_token}`:undefined};
+}

@@ -61,7 +61,8 @@ export async function* streamJsonObjects(response: Response): AsyncGenerator<Rec
   let arrayStarted = false, arrayEnded = false, objectDepth = 0, inString = false, escaped = false, buffer = "";
   const consume = function* (text: string) {
     for (const char of text) {
-      if (!arrayStarted) { if (char === "[") arrayStarted = true; continue; }
+      if (!arrayStarted) { if (/\s/.test(char)) continue; if (char !== "[") throw new Error("Incomplete or unsupported supplier response; expected a full array."); arrayStarted = true; continue; }
+      if(arrayEnded){if(!/\s/.test(char))throw new Error("Unexpected trailing supplier content.");continue;}
       if (objectDepth === 0) { if (char === "]") arrayEnded=true; if (char === "{") { objectDepth = 1; buffer = "{"; inString = false; escaped = false; } continue; }
       buffer += char;
       if (inString) {
@@ -160,11 +161,11 @@ function brandingMethods(row: Record<string, unknown>) {
     if (Array.isArray(value)) return value.forEach(walk);
     if (!value || typeof value !== "object") return;
     const object = value as Record<string, unknown>;
-    const name = pickText(object, ["MethodName", "BrandingMethod", "Name", "name"]);
+    const name = pickText(object, ["MethodName", "BrandingMethod", "brandingName", "Name", "name"]);
     if (name && /print|engr|embro|transfer|sublim|deboss|brand/i.test(name)) methods.add(name);
     Object.values(object).forEach(walk);
   };
-  for (const key of ["Branding", "branding", "Positions", "positions", "BrandingPositions"]) walk(row[key]);
+  for (const key of ["brandings", "Brandings", "Branding", "branding", "Positions", "positions", "BrandingPositions"]) walk(row[key]);
   return [...methods].slice(0, 12);
 }
 
@@ -206,11 +207,12 @@ function attributeValue(row: Record<string, unknown>, pattern: RegExp) {
 
 export function extractProductVariants(row: Record<string, unknown>) {
   const productCode = pickText(row, ["SimpleCode", "simpleCode", "ProductCode", "productCode", "Code", "code"]);
-  const candidates: Record<string, unknown>[] = [row];
+  const candidates: Record<string, unknown>[] = [];
   for (const key of ["Variants", "variants", "Products", "products", "Items", "items", "Children", "children"]) {
     const value = row[key];
     if (Array.isArray(value)) for (const item of value) if (item && typeof item === "object") candidates.push(item as Record<string, unknown>);
   }
+  if(!candidates.length)candidates.push(row);
   const unique = new Map<string, { productCode:string; fullCode:string; colour:string; size:string; imageUrl:string }>();
   for (const candidate of candidates) {
     const fullCode = pickText(candidate, ["FullCode", "fullCode", "SKU", "Sku", "sku", "Code", "code"]);
@@ -218,8 +220,8 @@ export function extractProductVariants(row: Record<string, unknown>) {
     unique.set(fullCode, {
       productCode: pickText(candidate, ["SimpleCode", "simpleCode", "ProductCode", "productCode"]) || productCode || fullCode,
       fullCode,
-      colour: pickText(candidate, ["Colour", "colour", "Color", "color", "ColourName", "colourName"]) || attributeValue(candidate, /colou?r/i),
-      size: pickText(candidate, ["Size", "size", "SizeName", "sizeName"]) || attributeValue(candidate, /size/i),
+      colour: pickText(candidate, ["Colour", "colour", "Color", "color", "ColourName", "colourName", "codeColourName", "codeColour"]) || attributeValue(candidate, /colou?r/i),
+      size: pickText(candidate, ["Size", "size", "SizeName", "sizeName", "codeSizeName", "codeSize"]) || attributeValue(candidate, /size/i),
       imageUrl: findImage(candidate) || findImage(row),
     });
   }

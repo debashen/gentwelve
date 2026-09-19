@@ -5,13 +5,13 @@ import {admin,fail,jsonBody,noStore} from "@/lib/sales/http";
 import {getDocument,editQuote,issueDocument,createRelated,changeStatus,effectiveStatus} from "@/lib/sales/documents";
 import {SalesError} from "@/lib/sales/store";
 import {renderDocumentPdf} from "@/lib/sales/pdf";
-import { documentPaid,confirmEft } from "@/lib/sales/payments";
+import { documentPaymentOptions,documentPaid,confirmEft } from "@/lib/sales/payments";
 export const dynamic="force-dynamic";
 export const runtime="nodejs";
 type Context={params:Promise<{id:string}>};
 export async function GET(request:Request,context:Context){try{
  await admin(request);const id=z.string().uuid().parse((await context.params).id);const doc=await getDocument(id);const paid=await documentPaid(doc);
- if(new URL(request.url).searchParams.get("format")==="pdf"){const pdf=await renderDocumentPdf(doc,paid);return new NextResponse(new Uint8Array(pdf),{headers:{...noStore,"Content-Type":"application/pdf","Content-Disposition":`attachment; filename="${doc.number||"DRAFT"}.pdf"`}})}
+ if(new URL(request.url).searchParams.get("format")==="pdf"){const pdf=await renderDocumentPdf(doc,paid,await documentPaymentOptions(doc));return new NextResponse(new Uint8Array(pdf),{headers:{...noStore,"Content-Type":"application/pdf","Content-Disposition":`attachment; filename="${doc.number||"DRAFT"}.pdf"`}})}
  const related=await DB.prepare("SELECT id,kind,number,status FROM sales_documents WHERE id!=?::uuid AND (id=?::uuid OR id=?::uuid OR quote_id=?::uuid OR order_id=?::uuid OR (quote_id IS NOT NULL AND quote_id=?::uuid) OR (order_id IS NOT NULL AND order_id=?::uuid)) ORDER BY created_at").bind(id,doc.quote_id,doc.order_id,id,id,doc.quote_id,doc.order_id).all();
  const payments=(await DB.prepare("SELECT id,provider,reference,provider_reference,amount_cents,currency,status,test_mode,paid_at,created_at FROM sales_payments WHERE order_id=?::uuid ORDER BY created_at DESC").bind(doc.kind==="order"?doc.id:doc.order_id).all()).results;
  const events=await DB.prepare("SELECT event,actor,detail,created_at AS createdAt FROM sales_audit WHERE entity_id=? ORDER BY created_at DESC LIMIT 100").bind(id).all();

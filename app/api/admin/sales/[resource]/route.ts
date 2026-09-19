@@ -5,6 +5,7 @@ import { DB } from "@/lib/database";
 import { admin,fail,jsonBody,noStore } from "@/lib/sales/http";
 import { audit,createCustomer,getBusiness,getCustomer,SalesError } from "@/lib/sales/store";
 import { businessSchema,customerSchema,enquiryInput,sequenceSchema } from "@/lib/sales/validation";
+import { brandingOptions } from "@/lib/sales/branding";
 import { providerReadiness } from "@/lib/sales/providers";
 import { createQuote,type SalesDocument } from "@/lib/sales/documents";
 export const dynamic="force-dynamic";
@@ -12,8 +13,17 @@ type Context={params:Promise<{resource:string}>};
 export async function GET(request:Request,context:Context){try{
   await admin(request);const {resource}=await context.params;const url=new URL(request.url);
   if(resource==="products"){
+    const code=url.searchParams.get("code");
+    if(code){
+      const product=await DB.prepare(`SELECT supplier_code AS code,name,description,image_url AS image,public_price_cents AS priceCents,branding_methods_json AS methods,raw_json AS raw,updated_at AS updatedAt FROM products WHERE supplier_code=? AND active=1`).bind(code).first<{code:string;name:string;description:string;image:string;priceCents:number|null;methods:string;raw:string;updatedAt:string}>();
+      if(!product)throw new SalesError("Product not found.",404);
+      const variants=(await DB.prepare("SELECT full_code AS code,COALESCE(colour,'') AS colour,COALESCE(size,'') AS size,stock_quantity AS stock,COALESCE(public_price_cents,?) AS priceCents,image_url AS image FROM variants WHERE product_code=? AND active=1 ORDER BY colour,size,full_code").bind(product.priceCents,code).all()).results;
+      let raw:Record<string,unknown>={};try{raw=JSON.parse(product.raw)}catch{}
+      const {raw:privateRaw,methods,...safe}=product;void privateRaw;
+      return NextResponse.json({product:safe,variants,branding:brandingOptions(raw),methods:JSON.parse(methods||"[]")},{headers:noStore});
+    }
     const q=`%${(url.searchParams.get("q")||"").slice(0,200)}%`;
-    return NextResponse.json({items:(await DB.prepare("SELECT supplier_code AS code,name,public_price_cents AS priceCents,minimum_quantity AS minimumQuantity FROM products WHERE active=1 AND (name ILIKE ? OR supplier_code ILIKE ?) ORDER BY name LIMIT 30").bind(q,q).all()).results},{headers:noStore});
+    return NextResponse.json({items:(await DB.prepare(`SELECT supplier_code AS code,name,image_url AS image,COALESCE((SELECT MIN(public_price_cents) FROM variants v WHERE v.product_code=products.supplier_code AND v.active=1),public_price_cents) AS priceCents,minimum_quantity AS minimumQuantity,COALESCE((SELECT SUM(stock_quantity) FROM variants v WHERE v.product_code=products.supplier_code AND v.active=1),0) AS stock FROM products WHERE active=1 AND (name ILIKE ? OR supplier_code ILIKE ? OR category ILIKE ? OR brand ILIKE ?) ORDER BY name LIMIT 30`).bind(q,q,q,q).all()).results},{headers:noStore});
   }
   if(resource==="documents"){
     const page=z.coerce.number().int().min(0).max(100000).parse(url.searchParams.get("page")||0);
@@ -40,6 +50,7 @@ export async function GET(request:Request,context:Context){try{
     const rows=await DB.prepare("SELECT id,name,data,version,created_at AS createdAt FROM sales_customers WHERE archived=false AND (name ILIKE ? OR data->>'email' ILIKE ? OR data->>'mobile' ILIKE ?) ORDER BY name,id LIMIT 51 OFFSET ?").bind(q,q,q,page*50).all();
     return NextResponse.json({items:rows.results.slice(0,50),hasMore:rows.results.length>50,page},{headers:noStore});
   }
+  if(resource==="enquiries"&&url.searchParams.get("id")){const id=z.string().uuid().parse(url.searchParams.get("id"));const item=await DB.prepare("SELECT id,customer_id AS customerId,contact_name AS contactName,source,details,status,reference FROM sales_enquiries WHERE id=?::uuid").bind(id).first();if(!item)throw new SalesError("Enquiry not found.",404);return NextResponse.json(item,{headers:noStore})}
   if(resource==="enquiries")return NextResponse.json({items:(await DB.prepare("SELECT id,customer_id AS customerId,contact_name AS contactName,source,details,status,created_at AS createdAt FROM sales_enquiries ORDER BY created_at DESC LIMIT 100").all()).results},{headers:noStore});
   throw new SalesError("Not found.",404);
 }catch(error){return fail(error)}}

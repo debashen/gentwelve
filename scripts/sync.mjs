@@ -21,13 +21,13 @@ try {
     let run = overview.runs[dataset];
     // Resume a saved run before starting another. Daily/weekly runners share a
     // workflow concurrency group; don't run the admin importer simultaneously.
-    if (run?.status !== "running") run = await request(`?type=${dataset}${dataset === "products" && mode === "daily" ? "&strategy=changes" : ""}`, "POST");
+    if (run?.status !== "running" || (dataset === "products" && run.mode !== (mode === "daily" ? "changes" : "full"))) run = await request(`?type=${dataset}${dataset === "products" && mode === "daily" ? "&strategy=changes" : ""}`, "POST");
     const runId = run.runId || run.id;
     let complete = false;
     for (let step = 0; step < 2000; step++) {
       run = await request(`?runId=${runId}`, "POST");
       console.log(`${dataset}: ${run.status}, received=${run.received}, stored=${run.stored}`);
-      if (run.status === "complete") { complete = true; break; }
+      if (run.status === "complete") { console.log(JSON.stringify(run.diagnostics || {})); complete = true; break; }
     }
     if (!complete) throw new Error("Sync reached its safety limit; run again to resume.");
   }
